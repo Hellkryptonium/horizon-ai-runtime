@@ -1,0 +1,1 @@
+ALTER TABLE "models" ADD COLUMN "runtime_model_id" varchar(255);

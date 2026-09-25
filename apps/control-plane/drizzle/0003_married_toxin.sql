@@ -1,0 +1,1 @@
+ALTER TABLE "models" RENAME COLUMN "architecture" TO "model_architecture";
