@@ -1,0 +1,5 @@
+import { PageHeader, Button } from "../components/ui/Primitives";
+import { Card } from "../components/ui/Card";
+import { Input } from "../components/ui/Input";
+
+export default function Settings() { return <div style={{ maxWidth: 760 }}><PageHeader title="Settings" description="Manage your workspace preferences and account." /><Card className="settings-card"><h2 className="content-title">Account</h2><div className="settings-grid"><div><label className="form-label">Name</label><Input defaultValue="Harish" /></div><div><label className="form-label">Email</label><Input defaultValue="harish@example.com" /></div></div><Button>Save changes</Button></Card><Card className="settings-card"><h2 className="content-title">Security</h2><p style={{ color: "var(--muted)" }}>Password and session management will be connected to the Control Plane in the next milestone.</p><Button variant="secondary">Change password</Button></Card><Card className="settings-card"><h2 className="content-title">API preferences</h2><p style={{ color: "var(--muted)" }}>Deployment tokens are scoped to individual deployments and are never shared with Worker Agents.</p></Card></div>; }

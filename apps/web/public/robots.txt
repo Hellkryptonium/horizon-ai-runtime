@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /workers
+Disallow: /models
+Disallow: /deploy
+Disallow: /deployments
+Disallow: /settings
+
+Sitemap: http://localhost:3000/sitemap.xml

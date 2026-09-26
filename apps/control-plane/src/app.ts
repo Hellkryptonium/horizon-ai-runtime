@@ -1,6 +1,11 @@
 import express from "express";
 
+import { env } from "./config/env.js";
+import { createCorsMiddleware } from "./middleware/cors.js";
 import { errorHandler } from "./middleware/error-handler.js";
+import { createAuthRouter } from "./modules/auth/auth.routes.js";
+import { authRepository } from "./modules/auth/auth.repository.js";
+import { AuthService } from "./modules/auth/auth.service.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import { createDeploymentRouter } from "./modules/deployments/deployments.routes.js";
 import { deploymentRepository, type DeploymentRepository } from "./modules/deployments/deployments.repository.js";
@@ -18,13 +23,16 @@ export const createApp = (
 	models: ModelRepository = modelRepository,
 	scheduler: Pick<SchedulerService, "scheduleWorkload"> = new SchedulerService(repository),
 	deployments: DeploymentRepository = deploymentRepository,
+	auth: AuthService = new AuthService(authRepository),
 ) => {
 	const app = express();
 	const modelService = new ModelService(models);
 	const workerDeploymentService = new WorkerDeploymentService(repository, deployments, modelService);
 
+	app.use(createCorsMiddleware(env.WEB_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean)));
 	app.use(express.json());
 	app.use(healthRouter);
+	app.use("/api/auth", createAuthRouter(auth));
 	app.use("/api/workers", createWorkerRouter(repository, workerDeploymentService));
 	app.use("/api/scheduler", createSchedulerRouter(repository));
 	app.use("/api/models", createModelRouter(models));

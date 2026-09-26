@@ -1,6 +1,7 @@
 import {
 	boolean,
 	integer,
+	index,
 	pgEnum,
 	pgTable,
 	text,
@@ -8,6 +9,25 @@ import {
 	uuid,
 	varchar,
 } from "drizzle-orm/pg-core";
+
+export const users = pgTable("users", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	name: varchar("name", { length: 255 }).notNull(),
+	email: varchar("email", { length: 320 }).notNull().unique(),
+	passwordHash: text("password_hash").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const sessions = pgTable("sessions", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	tokenHash: text("token_hash").notNull().unique(),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+	sessionsUserIdIndex: index("sessions_user_id_idx").on(table.userId),
+}));
 
 export const workerStatus = pgEnum("worker_status", ["ONLINE", "OFFLINE", "BUSY"]);
 
