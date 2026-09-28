@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 
 interface WorkerIdentityFile {
   workerId: string;
+  credential?: string;
 }
 
 export const loadWorkerId = async (identityFilePath: string): Promise<string | null> => {
@@ -22,6 +23,21 @@ export const loadWorkerId = async (identityFilePath: string): Promise<string | n
 export const saveWorkerId = async (identityFilePath: string, workerId: string): Promise<void> => {
   await mkdir(dirname(identityFilePath), { recursive: true });
   await writeFile(identityFilePath, `${JSON.stringify({ workerId }, null, 2)}\n`, "utf8");
+};
+
+export const loadWorkerCredential = async (identityFilePath: string): Promise<string | null> => {
+  try {
+    const content = await readFile(identityFilePath, "utf8");
+    const identity = JSON.parse(content) as Partial<WorkerIdentityFile>;
+    return typeof identity.credential === "string" && identity.credential.length > 0 ? identity.credential : null;
+  } catch {
+    return null;
+  }
+};
+
+export const saveWorkerIdentity = async (identityFilePath: string, workerId: string, credential: string): Promise<void> => {
+  await mkdir(dirname(identityFilePath), { recursive: true });
+  await writeFile(identityFilePath, `${JSON.stringify({ workerId, credential }, null, 2)}\n`, "utf8");
 };
 
 export const removeWorkerIdentity = async (identityFilePath: string): Promise<void> => {

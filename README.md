@@ -469,6 +469,32 @@ PostgreSQL credentials
 
 It only receives credentials required to authenticate with the Control Plane.
 
+### Fresh local enrollment test
+
+For a repeatable development test, reset the development enrollment data and
+the local Worker Agent identity before generating a new token:
+
+```powershell
+cd apps/control-plane
+$env:NODE_ENV = "development"
+npm run db:reset:test-runtime
+
+cd ../../workers/agent
+npm run identity:reset
+```
+
+Then start the Control Plane and frontend, generate a new token from
+**Hardware → Connect computer**, and run:
+
+```powershell
+$env:CONTROL_PLANE_URL = "http://localhost:4000"
+npm start -- --token "<new-enrollment-token>"
+```
+
+Enrollment tokens are single-use and expire after 15 minutes. The reset
+commands are development-only and do not run unless `NODE_ENV` is exactly
+`development`.
+
 ---
 
 ## Future Worker Distribution

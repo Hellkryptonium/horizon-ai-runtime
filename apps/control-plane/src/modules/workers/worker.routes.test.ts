@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 
 import { createApp } from "../../app.js";
 import type { NewWorker, Worker, WorkerRepository } from "./worker.repository.js";
+import type { WorkerEnrollmentRepository } from "./enrollment.repository.js";
+import { hashWorkerEnrollmentToken } from "./enrollment.service.js";
+import type { AuthService } from "../auth/auth.service.js";
 import { WorkerService } from "./worker.service.js";
+
+const userA = "00000000-0000-4000-8000-000000000010";
+const userB = "00000000-0000-4000-8000-000000000011";
 
 const registrationPayload = {
   name: "mac-01",
@@ -18,6 +24,8 @@ const registrationPayload = {
 
 const createWorkerRecord = (overrides: Partial<Worker> = {}): Worker => ({
   id: "00000000-0000-0000-0000-000000000001",
+  userId: null,
+  credentialHash: null,
   name: "mac-01",
   status: "ONLINE",
   cpuCores: 10,
@@ -41,6 +49,7 @@ const createFakeRepository = (initialWorkers: Worker[] = []): WorkerRepository =
       const worker: Worker = {
         id: input.id ?? "00000000-0000-0000-0000-000000000001",
         name: input.name,
+        credentialHash: input.credentialHash ?? null,
         status: input.status ?? "OFFLINE",
         cpuCores: input.cpuCores,
         totalRamMb: input.totalRamMb,
@@ -49,6 +58,7 @@ const createFakeRepository = (initialWorkers: Worker[] = []): WorkerRepository =
         vramMb: input.vramMb ?? null,
         architecture: input.architecture ?? null,
         operatingSystem: input.operatingSystem,
+        userId: input.userId ?? null,
         lastHeartbeat: input.lastHeartbeat ?? null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
         updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -59,8 +69,28 @@ const createFakeRepository = (initialWorkers: Worker[] = []): WorkerRepository =
     async getWorker(workerId) {
       return workers.find((worker) => worker.id === workerId);
     },
+    async getWorkerByCredentialHash(credentialHash) {
+      return workers.find((worker) => worker.credentialHash === credentialHash);
+    },
     async listWorkers() {
       return workers;
+    },
+    async listWorkersForUser(userId) {
+      return workers.filter((worker) => worker.userId === userId);
+    },
+    async updateWorkerForEnrollment(workerId, userId, credentialHash, input) {
+      const worker = workers.find((candidate) => candidate.id === workerId);
+      if (!worker || (worker.userId !== null && worker.userId !== userId)) {
+        throw new Error("worker ownership conflict");
+      }
+      Object.assign(worker, { ...input, userId, credentialHash, status: "ONLINE", lastHeartbeat: new Date(), updatedAt: new Date() });
+      return worker;
+    },
+    async updateConnectionStatus(workerId, status) {
+      const worker = workers.find((candidate) => candidate.id === workerId);
+      if (!worker) return undefined;
+      worker.status = status;
+      return worker;
     },
     async updateHeartbeat(workerId, update) {
       const worker = workers.find((candidate) => candidate.id === workerId);
@@ -95,34 +125,92 @@ const createFakeRepository = (initialWorkers: Worker[] = []): WorkerRepository =
   };
 };
 
-describe("worker routes", () => {
-  it("registers a worker", async () => {
-    const response = await request(createApp(createFakeRepository()))
-      .post("/api/workers/register")
-      .send(registrationPayload);
+const createFakeAuth = (userId = userA) => ({
+  async getUserForToken(token: string) {
+    return token ? { id: userId, name: "Test user", email: `${userId}@example.com` } : undefined;
+  },
+}) as AuthService;
 
-    expect(response.status).toBe(201);
-    expect(response.body.success).toBe(true);
-    expect(response.body.worker).toMatchObject({
-      id: "00000000-0000-0000-0000-000000000001",
-      name: "mac-01",
-      status: "ONLINE",
-    });
+const createFakeEnrollmentRepository = (): WorkerEnrollmentRepository => {
+  const enrollments = new Map<string, {
+    id: string;
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    usedAt: Date | null;
+    createdAt: Date;
+  }>();
+
+  return {
+    async createEnrollment(input) {
+      const enrollment = {
+        id: input.id!,
+        userId: input.userId,
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+        usedAt: null,
+        createdAt: new Date(),
+      };
+      enrollments.set(enrollment.tokenHash, enrollment);
+      return enrollment;
+    },
+    async peekEnrollment(tokenHash, now) {
+      const enrollment = enrollments.get(tokenHash);
+      return enrollment && !enrollment.usedAt && enrollment.expiresAt > now ? enrollment : undefined;
+    },
+    async consumeEnrollment(tokenHash, now) {
+      const enrollment = enrollments.get(tokenHash);
+      if (!enrollment || enrollment.usedAt || enrollment.expiresAt <= now) return undefined;
+      enrollment.usedAt = now;
+      return enrollment;
+    },
+  };
+};
+
+const createAuthenticatedApp = (
+  repository: WorkerRepository,
+  userId = userA,
+  enrollments = createFakeEnrollmentRepository(),
+) => createApp(repository, undefined, undefined, undefined, createFakeAuth(userId), enrollments);
+
+describe("worker routes", () => {
+  it("requires authentication for enrollment creation and worker listing", async () => {
+    const app = createApp(createFakeRepository(), undefined, undefined, undefined, createFakeAuth());
+    expect((await request(app).post("/api/workers/enrollment")).status).toBe(401);
+    expect((await request(app).get("/api/workers")).status).toBe(401);
+  });
+
+  it("generates and consumes a one-time enrollment token", async () => {
+    const app = createAuthenticatedApp(createFakeRepository());
+    const tokenResponse = await request(app).post("/api/workers/enrollment").set("Cookie", "horizon_session=session");
+    const token = tokenResponse.body.token as string;
+
+    expect(tokenResponse.status).toBe(201);
+    expect(token).toMatch(/^hzn_enroll_/);
+    expect(tokenResponse.body.expiresAt).toBeTruthy();
+    expect(hashWorkerEnrollmentToken(token)).not.toBe(token);
+
+    const enrolled = await request(app).post("/api/workers/enroll").send({ ...registrationPayload, token });
+    expect(enrolled.status).toBe(201);
+    expect(enrolled.body.worker.userId).toBe(userA);
+
+    const reused = await request(app).post("/api/workers/enroll").send({ ...registrationPayload, token });
+    expect(reused.status).toBe(401);
   });
 
   it("rejects an invalid cpuCores value", async () => {
-    const response = await request(createApp(createFakeRepository()))
-      .post("/api/workers/register")
-      .send({ ...registrationPayload, cpuCores: 0 });
+    const response = await request(createAuthenticatedApp(createFakeRepository()))
+      .post("/api/workers/enroll")
+      .send({ ...registrationPayload, token: "token", cpuCores: 0 });
 
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
   });
 
   it("rejects available RAM greater than total RAM", async () => {
-    const response = await request(createApp(createFakeRepository()))
-      .post("/api/workers/register")
-      .send({ ...registrationPayload, availableRamMb: 20000 });
+    const response = await request(createAuthenticatedApp(createFakeRepository()))
+      .post("/api/workers/enroll")
+      .send({ ...registrationPayload, token: "token", availableRamMb: 20000 });
 
     expect(response.status).toBe(400);
     expect(response.body.success).toBe(false);
@@ -130,7 +218,7 @@ describe("worker routes", () => {
 
   it("rejects malformed JSON", async () => {
     const response = await request(createApp(createFakeRepository()))
-      .post("/api/workers/register")
+      .post("/api/workers/enroll")
       .set("Content-Type", "application/json")
       .send('{"name":');
 
@@ -199,11 +287,26 @@ describe("worker routes", () => {
   });
 
   it("lists registered workers", async () => {
-    const worker = createWorkerRecord(registrationPayload);
+    const worker = createWorkerRecord({ ...registrationPayload, userId: userA });
 
-    const response = await request(createApp(createFakeRepository([worker]))).get("/api/workers");
+    const response = await request(createAuthenticatedApp(createFakeRepository([worker]))).get("/api/workers").set("Cookie", "horizon_session=session");
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ success: true, workers: [expect.objectContaining({ id: worker.id })] });
+  });
+
+  it("only lists workers owned by the authenticated user", async () => {
+    const workers = [
+      createWorkerRecord({ userId: userA }),
+      createWorkerRecord({ id: "00000000-0000-0000-0000-000000000002", userId: userB }),
+    ];
+
+    const response = await request(createAuthenticatedApp(createFakeRepository(workers), userA))
+      .get("/api/workers")
+      .set("Cookie", "horizon_session=session");
+
+    expect(response.status).toBe(200);
+    expect(response.body.workers).toHaveLength(1);
+    expect(response.body.workers[0].userId).toBe(userA);
   });
 });

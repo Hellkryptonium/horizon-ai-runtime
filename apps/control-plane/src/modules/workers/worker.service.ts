@@ -12,6 +12,7 @@ export type WorkerHeartbeat = z.infer<typeof workerHeartbeatSchema>;
 
 export const workerRegistrationSchema = z
   .object({
+	 id: z.string().uuid().optional(),
     name: z.string().trim().min(1, "name is required"),
     cpuCores: z.number().int().positive("cpuCores must be a positive integer"),
     totalRamMb: z.number().int().positive("totalRamMb must be a positive integer"),
@@ -27,6 +28,10 @@ export const workerRegistrationSchema = z
   });
 
 export type WorkerRegistration = z.infer<typeof workerRegistrationSchema>;
+export const workerEnrollmentSchema = z.object({
+  token: z.string().trim().min(1, "token is required"),
+}).and(workerRegistrationSchema);
+export type WorkerEnrollment = z.infer<typeof workerEnrollmentSchema>;
 
 export class WorkerService {
   constructor(private readonly repository: WorkerRepository) {}
@@ -41,8 +46,8 @@ export class WorkerService {
     });
   }
 
-  listWorkers(): Promise<Worker[]> {
-    return this.repository.listWorkers();
+  listWorkers(userId?: string): Promise<Worker[]> {
+    return userId ? this.repository.listWorkersForUser(userId) : this.repository.listWorkers();
   }
 
   heartbeat(workerId: string, input: WorkerHeartbeat): Promise<Worker | undefined> {

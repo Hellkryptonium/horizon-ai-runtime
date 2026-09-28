@@ -2,37 +2,60 @@ import type { NextFunction, Request, Response } from "express";
 
 import {
   WorkerService,
+  workerEnrollmentSchema,
   workerHeartbeatSchema,
-  workerRegistrationSchema,
 } from "./worker.service.js";
+import { InvalidWorkerEnrollmentError, WorkerEnrollmentService, WorkerOwnershipError } from "./enrollment.service.js";
 
 export class WorkerController {
-  constructor(private readonly service: WorkerService) {}
+  constructor(
+    private readonly service: WorkerService,
+    private readonly enrollmentService: WorkerEnrollmentService,
+  ) {}
 
-  register = async (request: Request, response: Response, next: NextFunction) => {
-    const result = workerRegistrationSchema.safeParse(request.body);
+  createEnrollment = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const result = await this.enrollmentService.createEnrollment(request.authenticatedUser!.id);
+      response.status(201).json({ success: true, ...result });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  enroll = async (request: Request, response: Response, next: NextFunction) => {
+    const result = workerEnrollmentSchema.safeParse(request.body);
 
     if (!result.success) {
       response.status(400).json({
         success: false,
-        error: "Invalid worker registration",
+        error: "Invalid worker enrollment",
         issues: result.error.issues,
       });
       return;
     }
 
     try {
-      const worker = await this.service.registerWorker(result.data);
-      response.status(201).json({ success: true, worker });
+      const { token, ...registration } = result.data;
+      const worker = await this.enrollmentService.enrollWorker(token, registration);
+      const { credentialHash: _credentialHash, credential, ...publicWorker } = worker;
+      response.status(201).json({ success: true, worker: { ...publicWorker, credential } });
     } catch (error) {
+      if (error instanceof InvalidWorkerEnrollmentError) {
+        response.status(401).json({ success: false, error: { code: error.code, message: "Invalid or expired enrollment token." } });
+        return;
+      }
+      if (error instanceof WorkerOwnershipError) {
+        response.status(409).json({ success: false, error: { code: error.code, message: "Worker belongs to another user." } });
+        return;
+      }
       next(error);
     }
   };
 
-  list = async (_request: Request, response: Response, next: NextFunction) => {
+  list = async (request: Request, response: Response, next: NextFunction) => {
     try {
-      const workers = await this.service.listWorkers();
-      response.json({ success: true, workers });
+      const workers = await this.service.listWorkers(request.authenticatedUser!.id);
+      response.json({ success: true, workers: workers.map(({ credentialHash: _credentialHash, ...worker }) => worker) });
     } catch (error) {
       next(error);
     }

@@ -1,1 +1,0 @@
-export { mockModels } from "./data";

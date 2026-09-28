@@ -68,6 +68,12 @@ const createDeploymentRepository = (existingDeployments: Deployment[] = []): Dep
     async findScheduledByWorkerId(workerId) {
       return deployments.filter((entry) => entry.workerId === workerId && entry.status === "SCHEDULED");
     },
+    async updateStatus(deploymentId, status) {
+      const existing = deployments.find((entry) => entry.id === deploymentId);
+      if (!existing) return undefined;
+      existing.status = status;
+      return existing;
+    },
   };
 };
 
@@ -76,13 +82,17 @@ const createWorkerRepository = (workerIds: string[]): WorkerRepository => ({
   async getWorker(workerId) {
     return workerIds.includes(workerId) ? ({ id: workerId } as never) : undefined;
   },
+  async getWorkerByCredentialHash() { return undefined; },
   async listWorkers() { return []; },
+  async listWorkersForUser() { return []; },
+  async updateWorkerForEnrollment() { throw new Error("not used"); },
+  async updateConnectionStatus() { return undefined; },
   async updateHeartbeat() { return undefined; },
   async markStaleWorkers() { return []; },
 });
 
 describe("deployment routes", () => {
-  it("creates a scheduled deployment", async () => {
+  it("rejects deployment creation without authentication", async () => {
     const response = await request(
       createApp(
         undefined,
@@ -94,39 +104,30 @@ describe("deployment routes", () => {
       .post("/api/deployments")
       .send({ modelId: model.id });
 
-    expect(response.status).toBe(201);
-    expect(response.body).toEqual({
-      success: true,
-      deployment: expect.objectContaining({
-        modelId: model.id,
-        workerId: worker.id,
-        status: "SCHEDULED",
-      }),
-    });
+    expect(response.status).toBe(401);
   });
 
-  it("rejects an invalid deployment body with 400", async () => {
+  it("rejects an unauthenticated invalid deployment body", async () => {
     const response = await request(
       createApp(undefined, createModelRepository(model), { scheduleWorkload: async () => worker }, createDeploymentRepository()),
     )
       .post("/api/deployments")
       .send({ modelId: "not-a-uuid" });
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(401);
   });
 
-  it("returns 404 when the model does not exist", async () => {
+  it("does not reveal model existence before authentication", async () => {
     const response = await request(
       createApp(undefined, createModelRepository(), { scheduleWorkload: async () => worker }, createDeploymentRepository()),
     )
       .post("/api/deployments")
       .send({ modelId: model.id });
 
-    expect(response.status).toBe(404);
-    expect(response.body.error.code).toBe("MODEL_NOT_FOUND");
+    expect(response.status).toBe(401);
   });
 
-  it("returns 409 when the scheduler finds no compatible worker", async () => {
+  it("does not invoke scheduling for an unauthenticated request", async () => {
     const response = await request(
       createApp(
         undefined,
@@ -138,7 +139,7 @@ describe("deployment routes", () => {
       .post("/api/deployments")
       .send({ modelId: model.id });
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(401);
   });
 
   it("lists and gets deployments", async () => {

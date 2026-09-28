@@ -2,7 +2,7 @@ import "dotenv/config";
 import { inArray } from "drizzle-orm";
 
 import { db } from "../db/index.js";
-import { deployments, models, workers } from "../db/schema.js";
+import { deployments, models, workerEnrollments, workers } from "../db/schema.js";
 
 const TEST_WORKER_IDS = [
   "470b8afc-f6a1-41d1-b435-f96e09a34f00",
@@ -46,10 +46,12 @@ const main = async () => {
     .select({ id: models.id, name: models.name, runtime: models.runtime })
     .from(models)
     .where(inArray(models.id, DUPLICATE_MODEL_IDS));
+  const enrollmentCount = await db.select({ id: workerEnrollments.id }).from(workerEnrollments);
 
   console.log(`Deployments to delete: ${matchingDeployments.length}`);
   console.log(`Workers to delete: ${matchingWorkers.length}`);
   console.log(`Duplicate models to delete: ${matchingModels.length}`);
+  console.log(`Worker enrollments to delete: ${enrollmentCount.length}`);
 
   if (matchingDeployments.length > 0) {
     await db.delete(deployments).where(inArray(deployments.id, TEST_DEPLOYMENT_IDS));
@@ -59,6 +61,9 @@ const main = async () => {
   }
   if (matchingModels.length > 0) {
     await db.delete(models).where(inArray(models.id, DUPLICATE_MODEL_IDS));
+  }
+  if (enrollmentCount.length > 0) {
+    await db.delete(workerEnrollments);
   }
 
   const remainingWorkers = await db.select({ id: workers.id, name: workers.name, status: workers.status }).from(workers);

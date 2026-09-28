@@ -37,6 +37,10 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
     return this.handles.get(handle.runtimeId)?.state === "RUNNING";
   }
 
+  async infer(_request: RuntimeDeploymentRequest, prompt: string): Promise<string> {
+    return `Fake response: ${prompt}`;
+  }
+
   private findByDeployment(deploymentId: string) {
     return [...this.handles.values()].find((handle) => handle.deploymentId === deploymentId);
   }

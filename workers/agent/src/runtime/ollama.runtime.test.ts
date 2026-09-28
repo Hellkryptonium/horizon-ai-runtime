@@ -135,4 +135,26 @@ describe("Ollama runtime adapter", () => {
     assert.equal(first.runtimeId, second.runtimeId);
     assert.equal(calls.filter((path) => path === "/api/generate").length, 1);
   });
+
+  it("sends a non-streaming inference prompt to Ollama", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const adapter = new OllamaRuntimeAdapter({
+      baseUrl: "http://localhost:11434",
+      timeoutMs: 1000,
+      fetchImpl: async (input, init) => {
+        const path = new URL(String(input)).pathname;
+        if (path === "/api/version") return response({ version: "0.3.0" });
+        if (path === "/api/tags") return response({ models: [{ name: "qwen2.5:3b" }] });
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return response({ response: "Inference response" });
+      },
+    });
+    const manager = new RuntimeManager(new Map([["ollama", adapter]]));
+    await manager.startDeployment(request);
+
+    await assert.doesNotReject(async () => {
+      assert.equal(await manager.inferDeployment(request.deploymentId, "Hello Ollama"), "Inference response");
+    });
+    assert.deepEqual(requestBody, { model: "qwen2.5:3b", prompt: "Hello Ollama", stream: false });
+  });
 });

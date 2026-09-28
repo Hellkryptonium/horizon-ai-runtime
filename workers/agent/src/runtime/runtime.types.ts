@@ -27,4 +27,5 @@ export interface RuntimeAdapter {
   start(request: RuntimeDeploymentRequest): Promise<RuntimeHandle>;
   stop(handle: RuntimeHandle): Promise<void>;
   isRunning(handle: RuntimeHandle): Promise<boolean>;
+  infer(request: RuntimeDeploymentRequest, prompt: string): Promise<string>;
 }

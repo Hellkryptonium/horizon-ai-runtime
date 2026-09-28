@@ -7,6 +7,8 @@ export interface WorkerConfig {
   ollamaBaseUrl: string;
   ollamaRequestTimeoutMs: number;
   workerName?: string;
+  enrollmentToken?: string;
+  forceReenrollment?: boolean;
   heartbeatIntervalMs: number;
   identityFilePath: string;
 }
@@ -40,6 +42,9 @@ try {
 }
 
 const workerName = process.env.WORKER_NAME?.trim();
+const tokenArgument = process.argv.find((argument) => argument.startsWith("--token="))?.slice("--token=".length)
+  || (process.argv.includes("--token") ? process.argv[process.argv.indexOf("--token") + 1] : undefined);
+const enrollmentToken = tokenArgument?.trim() || process.env.WORKER_ENROLLMENT_TOKEN?.trim();
 const ollamaBaseUrl = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
 
 try {
@@ -63,6 +68,8 @@ export const config: WorkerConfig = {
     30_000,
   ),
   workerName: workerName || undefined,
+  enrollmentToken: enrollmentToken || undefined,
+  forceReenrollment: Boolean(tokenArgument),
   heartbeatIntervalMs: parsePositiveInteger(
     "HEARTBEAT_INTERVAL_MS",
     process.env.HEARTBEAT_INTERVAL_MS,

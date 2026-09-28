@@ -1,7 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 
 import { ModelNotFoundError } from "../models/models.service.js";
-import { NoCompatibleWorkerError } from "../scheduler/scheduler.service.js";
 import {
   DeploymentNotAssignedError,
   DeploymentNotFoundError,
@@ -9,6 +8,10 @@ import {
   DeploymentService,
   WorkerDeploymentService,
   WorkerNotFoundError,
+  WorkerOfflineError,
+  WorkerIncompatibleError,
+  DeploymentNotRunningError,
+  InferenceFailedError,
 } from "./deployments.service.js";
 import { deploymentCreationSchema } from "./deployments.validation.js";
 
@@ -28,7 +31,11 @@ export class DeploymentController {
     }
 
     try {
-      const deployment = await this.service.createDeployment(result.data);
+      if (!request.authenticatedUser) {
+        response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } });
+        return;
+      }
+      const deployment = await this.service.createDeployment(result.data, request.authenticatedUser.id);
       response.status(201).json({ success: true, deployment });
     } catch (error) {
       if (error instanceof ModelNotFoundError) {
@@ -39,14 +46,8 @@ export class DeploymentController {
         return;
       }
 
-      if (error instanceof NoCompatibleWorkerError) {
-        response.status(409).json({
-          success: false,
-          error: {
-            code: error.code,
-            message: "No online worker satisfies the model's resource requirements.",
-          },
-        });
+      if (error instanceof WorkerNotFoundError || error instanceof WorkerOfflineError || error instanceof WorkerIncompatibleError) {
+        response.status(error instanceof WorkerNotFoundError ? 404 : 409).json({ success: false, error: { code: error.code, message: error.message } });
         return;
       }
 
@@ -88,6 +89,41 @@ export class DeploymentController {
         return;
       }
 
+      next(error);
+    }
+  };
+
+  inference = async (request: Request, response: Response, next: NextFunction) => {
+    const deploymentId = request.params.deploymentId;
+    const prompt = request.body?.prompt;
+    if (typeof deploymentId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(deploymentId)) {
+      response.status(400).json({ success: false, error: "Invalid deployment ID" });
+      return;
+    }
+    if (typeof prompt !== "string" || prompt.trim() === "") {
+      response.status(400).json({ success: false, error: "Prompt is required" });
+      return;
+    }
+    if (!request.authenticatedUser) {
+      response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } });
+      return;
+    }
+    try {
+      const inference = await this.service.inferDeployment(deploymentId, request.authenticatedUser.id, prompt);
+      response.json({ success: true, response: inference });
+    } catch (error) {
+      if (error instanceof DeploymentNotFoundError || error instanceof WorkerNotFoundError) {
+        response.status(404).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      if (error instanceof DeploymentNotRunningError || error instanceof WorkerOfflineError) {
+        response.status(409).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      if (error instanceof InferenceFailedError) {
+        response.status(502).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
       next(error);
     }
   };

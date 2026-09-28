@@ -1,13 +1,13 @@
 import { config } from "./config.js";
 import { detectHardware } from "./hardware/detect.js";
-import { createHeartbeatClient, WorkerNotFoundError } from "./heartbeat/heartbeat.js";
-import { resolveWorkerIdentity } from "./identity/identity.js";
+import { loadWorkerCredential, loadWorkerId, saveWorkerIdentity } from "./identity/identity.js";
 import { registerWorker } from "./registration/register.js";
-import { createDeploymentPoller } from "./deployment/poller.js";
+import { createWorkerWebSocketClient } from "./connection/worker.websocket.js";
 import { DeploymentHandler } from "./deployment/handler.js";
 import { FakeRuntimeAdapter } from "./runtime/fake.runtime.js";
 import { RuntimeManager } from "./runtime/runtime.manager.js";
 import { OllamaRuntimeAdapter } from "./runtime/ollama.runtime.js";
+import { OllamaProvisioner } from "./runtime/ollama.provisioner.js";
 
 const printWorkerSummary = (workerId: string, hardware: Awaited<ReturnType<typeof detectHardware>>) => {
   console.log("Horizon Worker Agent");
@@ -25,38 +25,51 @@ const printWorkerSummary = (workerId: string, hardware: Awaited<ReturnType<typeo
 
 const main = async () => {
   const hardware = await detectHardware();
-  const heartbeat = createHeartbeatClient(config);
-  const resolution = await resolveWorkerIdentity({
-    identityFilePath: config.identityFilePath,
-    register: () => registerWorker(config, hardware),
-    reconnect: (workerId) => heartbeat.sendNow(workerId),
-    isWorkerNotFound: (error) => error instanceof WorkerNotFoundError,
-  });
+  const savedWorkerId = await loadWorkerId(config.identityFilePath);
+  const savedCredential = await loadWorkerCredential(config.identityFilePath);
+  let workerId = savedWorkerId;
+  let credential = savedCredential;
+  let reconnected = Boolean(workerId && credential);
 
-  printWorkerSummary(resolution.workerId, hardware);
-  console.log(`${resolution.reconnected ? "Reconnected" : "Registered"} successfully.`);
-  heartbeat.start(resolution.workerId, !resolution.reconnected);
+  if (!workerId || !credential || (config.forceReenrollment && config.enrollmentToken)) {
+    if (!config.enrollmentToken) {
+      throw new Error("WORKER_ENROLLMENT_TOKEN is required for first enrollment");
+    }
+    const registration = await registerWorker(config, hardware, config.enrollmentToken, workerId ?? undefined);
+    workerId = registration.workerId;
+    credential = registration.credential;
+    await saveWorkerIdentity(config.identityFilePath, workerId, credential);
+    reconnected = false;
+  }
+
   const runtimeManager = new RuntimeManager(new Map<string, import("./runtime/runtime.types.js").RuntimeAdapter>([
     ["fake", new FakeRuntimeAdapter()],
     ["ollama", new OllamaRuntimeAdapter({
       baseUrl: config.ollamaBaseUrl,
       timeoutMs: config.ollamaRequestTimeoutMs,
     })],
-  ]));
+  ]), new Map([["ollama", new OllamaProvisioner({
+    baseUrl: config.ollamaBaseUrl,
+    timeoutMs: config.ollamaRequestTimeoutMs,
+    log: console.log,
+  })]]));
   const deploymentHandler = new DeploymentHandler(runtimeManager);
-  const deploymentPoller = createDeploymentPoller(
+  const websocket = createWorkerWebSocketClient(
     config,
-    resolution.workerId,
-    fetch,
-    console.log,
-    console.error,
-    (deployment) => deploymentHandler.handle(deployment).then(() => undefined),
+    workerId,
+    credential,
+    hardware.name,
+    undefined,
+    (command) => deploymentHandler.handleCommand(command).then((handle) => handle ? { runtimeId: handle.runtimeId } : undefined),
+    (command) => deploymentHandler.handleInferenceCommand(command),
+    (command) => runtimeManager.provision("ollama", command.type, command.payload.modelId).then((result) => result as Record<string, unknown>),
   );
-  deploymentPoller.start();
+  await websocket.start();
+  printWorkerSummary(workerId, hardware);
+  console.log(`${reconnected ? "Reconnected" : "Registered"} successfully.`);
 
   const shutdown = () => {
-    heartbeat.stop();
-    deploymentPoller.stop();
+    websocket.stop();
     console.log("Worker agent shutting down...");
     process.exit(0);
   };

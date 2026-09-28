@@ -1,15 +1,21 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { authApi } from "./api/auth";
 import { ApiError } from "./api/client";
-import { dashboardApi, deploymentsApi, modelsApi, workersApi } from "./api";
+import { deploymentsApi, modelsApi, ownedWorkersApi, workerProvisioningApi } from "./api";
 
-export const useWorkersQuery = () => useQuery({ queryKey: ["workers"], queryFn: workersApi.list });
+export const useOwnedWorkersQuery = () => useQuery({ queryKey: ["owned-workers"], queryFn: ownedWorkersApi.list });
+export const useCreateWorkerEnrollmentMutation = () => useMutation({ mutationFn: ownedWorkersApi.createEnrollment });
 export const useModelsQuery = () => useQuery({ queryKey: ["models"], queryFn: modelsApi.list });
 export const useDeploymentsQuery = () => useQuery({ queryKey: ["deployments"], queryFn: deploymentsApi.list });
 export const useDeploymentQuery = (id: string) => useQuery({ queryKey: ["deployments", id], queryFn: () => deploymentsApi.get(id) });
-export const useDashboardStatsQuery = () => useQuery({ queryKey: ["dashboard", "stats"], queryFn: dashboardApi.stats });
+export const useCreateDeploymentMutation = () => useMutation({ mutationFn: ({ modelId, workerId }: { modelId: string; workerId: string }) => deploymentsApi.create(modelId, workerId) });
+export const useInferenceMutation = () => useMutation({ mutationFn: ({ deploymentId, prompt }: { deploymentId: string; prompt: string }) => deploymentsApi.infer(deploymentId, prompt) });
 export const useCurrentUserQuery = (enabled = true) => useQuery({ queryKey: ["current-user"], queryFn: authApi.getCurrentUser, enabled, retry: false, select: (response) => response.user });
 export const useLoginMutation = () => useMutation({ mutationFn: authApi.login });
 export const useRegisterMutation = () => useMutation({ mutationFn: authApi.register });
 export const useLogoutMutation = () => useMutation({ mutationFn: authApi.logout });
+export const useRuntimeHealthMutation = () => useMutation({ mutationFn: workerProvisioningApi.health });
+export const useRuntimeInstallMutation = () => useMutation({ mutationFn: workerProvisioningApi.install });
+export const useModelStatusMutation = () => useMutation({ mutationFn: workerProvisioningApi.models });
+export const useModelPullMutation = () => useMutation({ mutationFn: ({ workerId, modelId }: { workerId: string; modelId: string }) => workerProvisioningApi.pull(workerId, modelId) });
 export const isUnauthorized = (error: unknown) => error instanceof ApiError && error.status === 401;

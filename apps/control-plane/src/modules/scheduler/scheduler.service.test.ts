@@ -7,6 +7,8 @@ import { schedulingRequestSchema } from "./scheduler.types.js";
 
 const createWorker = (overrides: Partial<Worker> = {}): Worker => ({
   id: "00000000-0000-0000-0000-000000000001",
+  userId: null,
+  credentialHash: null,
   name: "worker-01",
   status: "ONLINE",
   cpuCores: 8,

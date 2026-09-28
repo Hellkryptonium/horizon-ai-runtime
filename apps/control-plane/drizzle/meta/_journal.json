@@ -43,6 +43,20 @@
       "when": 1790452580393,
       "tag": "0005_add_users_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790612538070,
+      "tag": "0006_thankful_jocasta",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790615112865,
+      "tag": "0007_plain_machine_man",
+      "breakpoints": true
     }
   ]
 }

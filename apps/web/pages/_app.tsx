@@ -16,10 +16,9 @@ export default function App({ Component, pageProps, router }: AppProps) {
 
 function AuthGate({ publicPage, children }: { publicPage: boolean; children: ReactNode }) {
   const router = useRouter();
-  const { data: user, isLoading, error } = useCurrentUserQuery(!publicPage);
+  const { data: user, isLoading, error } = useCurrentUserQuery(true);
   useEffect(() => {
     if (isLoading) return;
-    if (publicPage && user) { void router.replace("/dashboard"); return; }
     if (!publicPage && isUnauthorized(error)) void router.replace("/login");
   }, [error, isLoading, publicPage, router, user]);
   if (publicPage) return <>{children}</>;

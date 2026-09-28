@@ -1,12 +1,16 @@
-import { app } from "./app.js";
+import { createApp } from "./app.js";
 import { env } from "./config/env.js";
 import "./db/client.js";
+import { createServer } from "node:http";
 import { workerRepository } from "./modules/workers/worker.repository.js";
-import { startWorkerStaleMonitor } from "./modules/workers/worker.monitor.js";
-import { WorkerService } from "./modules/workers/worker.service.js";
+import { WorkerConnectionManager } from "./modules/workers/worker.connection-manager.js";
+import { deploymentRepository } from "./modules/deployments/deployments.repository.js";
 
-app.listen(env.PORT, () => {
+const connectionManager = new WorkerConnectionManager(workerRepository, deploymentRepository);
+const app = createApp(workerRepository, undefined, undefined, deploymentRepository, undefined, undefined, connectionManager);
+const server = createServer(app);
+connectionManager.attach(server);
+
+server.listen(env.PORT, () => {
   console.log(`Horizon control plane listening on port ${env.PORT}`);
 });
-
-startWorkerStaleMonitor(new WorkerService(workerRepository));

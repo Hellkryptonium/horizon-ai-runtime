@@ -1,4 +1,4 @@
-import type { PendingDeployment } from "./types.js";
+import type { DeploymentCommand, InferenceCommand, PendingDeployment } from "./types.js";
 import { RuntimeManager } from "../runtime/runtime.manager.js";
 import type { RuntimeDeploymentRequest, RuntimeHandle } from "../runtime/runtime.types.js";
 
@@ -7,6 +7,7 @@ export class DeploymentHandler {
     private readonly runtimeManager: RuntimeManager,
     private readonly log: (message: string) => void = console.log,
     private readonly errorLog: (message: string) => void = console.error,
+    private readonly localOllamaModelId = process.env.OLLAMA_MODEL_ID?.trim() || "qwen2.5:3b",
   ) {}
 
   async handle(deployment: PendingDeployment): Promise<RuntimeHandle | undefined> {
@@ -43,5 +44,29 @@ export class DeploymentHandler {
       );
       return undefined;
     }
+  }
+
+  async handleCommand(command: DeploymentCommand): Promise<RuntimeHandle | undefined> {
+    return this.handle({
+      deploymentId: command.payload.deploymentId,
+      modelId: command.payload.modelId,
+      workerId: command.workerId,
+      status: "SCHEDULED",
+      modelName: command.payload.modelId,
+      modelVersion: "direct",
+      runtimeModelId: this.localOllamaModelId,
+      format: "ollama",
+      runtime: command.payload.runtime,
+      sizeMb: 1,
+      minRamMb: 1,
+      minVramMb: null,
+      requiresGpu: false,
+      modelArchitecture: "unknown",
+      contextLength: null,
+    });
+  }
+
+  async handleInferenceCommand(command: InferenceCommand): Promise<string> {
+    return this.runtimeManager.inferDeployment(command.payload.deploymentId, command.payload.prompt);
   }
 }

@@ -1,10 +1,10 @@
-import type { SchedulerService } from "../scheduler/scheduler.service.js";
-import type { SchedulingRequest } from "../scheduler/scheduler.types.js";
 import type { DeploymentRepository } from "./deployments.repository.js";
 import type { Deployment } from "./deployments.types.js";
 import type { DeploymentCreation } from "./deployments.validation.js";
 import type { WorkerRepository } from "../workers/worker.repository.js";
 import type { ModelService } from "../models/models.service.js";
+import type { WorkerConnectionManager } from "../workers/worker.connection-manager.js";
+import { randomUUID } from "node:crypto";
 
 export class DeploymentNotFoundError extends Error {
   readonly code = "DEPLOYMENT_NOT_FOUND";
@@ -18,24 +18,43 @@ export class DeploymentNotFoundError extends Error {
 export class DeploymentService {
   constructor(
     private readonly modelService: Pick<ModelService, "getModel">,
-    private readonly schedulerService: Pick<SchedulerService, "scheduleWorkload">,
     private readonly repository: DeploymentRepository,
+    private readonly workers: Pick<WorkerRepository, "getWorker">,
+    private readonly connectionManager: Pick<WorkerConnectionManager, "sendToWorker" | "isWorkerConnected" | "requestInference">,
   ) {}
 
-  async createDeployment(input: DeploymentCreation): Promise<Deployment> {
+  async createDeployment(input: DeploymentCreation, userId: string): Promise<Deployment> {
     const model = await this.modelService.getModel(input.modelId);
-    const requirements: SchedulingRequest = {
-      minRamMb: model.minRamMb,
-      minVramMb: model.minVramMb ?? undefined,
-      requiresGpu: model.requiresGpu,
-    };
-    const worker = await this.schedulerService.scheduleWorkload(requirements);
+    const worker = await this.workers.getWorker(input.workerId);
+    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (worker.status !== "ONLINE" || !this.connectionManager.isWorkerConnected(worker.id)) {
+      throw new WorkerOfflineError();
+    }
+    if (model.runtime !== "ollama"
+      || worker.availableRamMb < model.minRamMb
+      || (model.requiresGpu && !worker.gpu)
+      || (model.minVramMb !== null && (worker.vramMb ?? 0) < model.minVramMb)) {
+      throw new WorkerIncompatibleError();
+    }
 
-    return this.repository.createDeployment({
+    const deployment = await this.repository.createDeployment({
       modelId: model.id,
       workerId: worker.id,
-      status: "SCHEDULED",
+      status: "PENDING",
     });
+    const sent = this.connectionManager.sendToWorker(worker.id, {
+      type: "deployment.command",
+      version: 1,
+      requestId: deployment.id,
+      workerId: worker.id,
+      payload: { deploymentId: deployment.id, modelId: model.id, runtime: "ollama" },
+    });
+    if (!sent) {
+      await this.repository.updateStatus(deployment.id, "FAILED");
+      throw new WorkerOfflineError();
+    }
+    await this.repository.updateStatus(deployment.id, "DEPLOYING");
+    return { ...deployment, status: "DEPLOYING" };
   }
 
   listDeployments(): Promise<Deployment[]> {
@@ -47,6 +66,18 @@ export class DeploymentService {
 
     if (!deployment) throw new DeploymentNotFoundError();
     return deployment;
+  }
+
+  async inferDeployment(deploymentId: string, userId: string, prompt: string) {
+    const deployment = await this.getDeployment(deploymentId);
+    const worker = await this.workers.getWorker(deployment.workerId);
+    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (deployment.status !== "RUNNING") throw new DeploymentNotRunningError();
+    if (!this.connectionManager.isWorkerConnected(worker.id)) throw new WorkerOfflineError();
+
+    const result = await this.connectionManager.requestInference(worker.id, deployment.id, randomUUID(), prompt);
+    if (!result.success) throw new InferenceFailedError(result.error || "Inference failed.");
+    return result.response || "";
   }
 }
 
@@ -107,4 +138,35 @@ export class WorkerDeploymentService {
   private async requireWorker(workerId: string) {
     if (!(await this.workers.getWorker(workerId))) throw new WorkerNotFoundError();
   }
+}
+
+export class WorkerOfflineError extends Error {
+  readonly code = "WORKER_OFFLINE";
+
+  constructor() {
+    super("Worker is not connected.");
+    this.name = "WorkerOfflineError";
+  }
+}
+
+export class WorkerIncompatibleError extends Error {
+  readonly code = "WORKER_INCOMPATIBLE";
+
+  constructor() {
+    super("Worker does not satisfy the model requirements.");
+    this.name = "WorkerIncompatibleError";
+  }
+}
+
+export class DeploymentNotRunningError extends Error {
+  readonly code = "DEPLOYMENT_NOT_RUNNING";
+
+  constructor() {
+    super("Deployment must be running before inference.");
+    this.name = "DeploymentNotRunningError";
+  }
+}
+
+export class InferenceFailedError extends Error {
+  readonly code = "INFERENCE_FAILED";
 }

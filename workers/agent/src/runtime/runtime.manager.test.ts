@@ -43,6 +43,15 @@ describe("runtime manager", () => {
     assert.equal(second.runtimeId, first.runtimeId);
   });
 
+  it("invokes inference on the running runtime", async () => {
+    const manager = createManager();
+    await manager.startDeployment(request);
+
+    await assert.doesNotReject(async () => {
+      assert.equal(await manager.inferDeployment(request.deploymentId, "Hello"), "Fake response: Hello");
+    });
+  });
+
   it("rejects unsupported runtimes", async () => {
     const manager = createManager();
 

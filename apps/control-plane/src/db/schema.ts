@@ -33,6 +33,8 @@ export const workerStatus = pgEnum("worker_status", ["ONLINE", "OFFLINE", "BUSY"
 
 export const workers = pgTable("workers", {
 	id: uuid("id").defaultRandom().primaryKey(),
+	userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+	credentialHash: text("credential_hash").unique(),
 	name: varchar("name", { length: 255 }).notNull(),
 	status: workerStatus("status").default("OFFLINE").notNull(),
 	cpuCores: integer("cpu_cores").notNull(),
@@ -46,6 +48,17 @@ export const workers = pgTable("workers", {
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const workerEnrollments = pgTable("worker_enrollments", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	tokenHash: text("token_hash").notNull().unique(),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	usedAt: timestamp("used_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+	workerEnrollmentsUserIdIndex: index("worker_enrollments_user_id_idx").on(table.userId),
+}));
 
 export const models = pgTable("models", {
 	id: uuid("id").defaultRandom().primaryKey(),

@@ -5,18 +5,29 @@ interface RegistrationResponse {
   success: boolean;
   worker?: {
     id: string;
+    credential?: string;
   };
+}
+
+export interface WorkerRegistrationResult {
+  workerId: string;
+  credential: string;
 }
 
 export const registerWorker = async (
   workerConfig: WorkerConfig,
   hardware: HardwareInfo,
-): Promise<string> => {
-  const endpoint = new URL("/api/workers/register", `${workerConfig.controlPlaneUrl}/`);
-  const response = await fetch(endpoint, {
+  enrollmentToken: string,
+  workerId?: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WorkerRegistrationResult> => {
+  const endpoint = new URL("/api/workers/enroll", `${workerConfig.controlPlaneUrl}/`);
+  const response = await fetchImpl(endpoint, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
+      token: enrollmentToken,
+      ...(workerId ? { id: workerId } : {}),
       ...hardware,
       name: workerConfig.workerName || hardware.name,
     }),
@@ -34,9 +45,9 @@ export const registerWorker = async (
     throw new Error("Worker registration returned an invalid response");
   }
 
-  if (!result.success || !result.worker?.id) {
-    throw new Error("Worker registration response did not include a worker ID");
+  if (!result.success || !result.worker?.id || !result.worker.credential) {
+    throw new Error("Worker enrollment response did not include worker credentials");
   }
 
-  return result.worker.id;
+  return { workerId: result.worker.id, credential: result.worker.credential };
 };

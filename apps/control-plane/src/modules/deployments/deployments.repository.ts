@@ -9,6 +9,7 @@ export interface DeploymentRepository {
   listDeployments(): Promise<Deployment[]>;
   getDeployment(deploymentId: string): Promise<Deployment | undefined>;
   findScheduledByWorkerId(workerId: string): Promise<Deployment[]>;
+  updateStatus(deploymentId: string, status: Deployment["status"]): Promise<Deployment | undefined>;
 }
 
 export const deploymentRepository: DeploymentRepository = {
@@ -41,5 +42,14 @@ export const deploymentRepository: DeploymentRepository = {
       .from(deployments)
       .where(and(eq(deployments.workerId, workerId), eq(deployments.status, "SCHEDULED")))
       .orderBy(desc(deployments.createdAt));
+  },
+
+  async updateStatus(deploymentId, status) {
+    const [updated] = await db
+      .update(deployments)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(deployments.id, deploymentId))
+      .returning();
+    return updated;
   },
 };

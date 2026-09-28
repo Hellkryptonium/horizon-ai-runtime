@@ -3,7 +3,7 @@ import { useRouter } from "next/router";
 import { Activity, Boxes, Cpu, Gauge, HelpCircle, Layers3, LayoutDashboard, LogOut, Menu, Settings, TerminalSquare, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCurrentUserQuery, useLogoutMutation } from "../../lib/query";
+import { useCurrentUserQuery, useDeploymentsQuery, useLogoutMutation } from "../../lib/query";
 
 const primaryNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -18,6 +18,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: user } = useCurrentUserQuery();
+  const { data: deployments = [] } = useDeploymentsQuery();
   const logout = useLogoutMutation();
   const [open, setOpen] = useState(false);
   const isActive = (href: string) => router.pathname === href || router.pathname.startsWith(`${href}/`);
@@ -28,7 +29,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
       <div className="workspace-switcher"><span className="workspace-avatar">MP</span><span><strong>Multi Horizon</strong><small>Personal workspace</small></span><span className="chevron">⌄</span></div>
       <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-label">Workspace</div>
-        {primaryNav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-item ${isActive(href) ? "active" : ""}`} onClick={() => setOpen(false)}><Icon size={17} strokeWidth={1.8} /><span>{label}</span>{label === "Deployments" && <span className="nav-count">2</span>}</Link>)}
+        {primaryNav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={`nav-item ${isActive(href) ? "active" : ""}`} onClick={() => setOpen(false)}><Icon size={17} strokeWidth={1.8} /><span>{label}</span>{label === "Deployments" && deployments.length > 0 && <span className="nav-count">{deployments.length}</span>}</Link>)}
         <div className="nav-divider" />
         <div className="nav-label">Manage</div>
         <Link href="/settings" className={`nav-item ${isActive("/settings") ? "active" : ""}`} onClick={() => setOpen(false)}><Settings size={17} strokeWidth={1.8} /><span>Settings</span></Link>

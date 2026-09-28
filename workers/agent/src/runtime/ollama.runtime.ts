@@ -116,6 +116,24 @@ export class OllamaRuntimeAdapter implements RuntimeAdapter {
     return handle;
   }
 
+  async infer(request: RuntimeDeploymentRequest, prompt: string): Promise<string> {
+    const runtimeModelId = this.requireModelId(request);
+    let response: Response;
+    try {
+      response = await this.request("/api/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: runtimeModelId, prompt, stream: false }),
+      });
+    } catch (error: unknown) {
+      throw new ModelStartFailedError(error instanceof Error ? error.message : "Ollama request failed.");
+    }
+    if (!response.ok) throw new ModelStartFailedError(`Ollama returned HTTP ${response.status}.`);
+    const body = (await response.json()) as OllamaGenerateResponse;
+    if (typeof body.response !== "string") throw new ModelHealthCheckFailedError(runtimeModelId);
+    return body.response;
+  }
+
   async stop(handle: RuntimeHandle): Promise<void> {
     const stored = this.handles.get(handle.runtimeId);
     if (stored) stored.state = "STOPPED";
