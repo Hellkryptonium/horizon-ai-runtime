@@ -50,6 +50,20 @@ export const normalizeArchitecture = (architecture: string): string => {
 
 const bytesToMegabytes = (bytes: number) => Math.floor(bytes / 1024 / 1024);
 
+export const detectAvailableRamMb = async (): Promise<number> => {
+  if (os.platform() !== "darwin") return bytesToMegabytes(os.freemem());
+
+  try {
+    const { stdout } = await execFileAsync("memory_pressure", ["-Q"]);
+    const percentage = stdout.match(/memory free percentage:\s+(\d+)%/i)?.[1];
+    if (percentage) return Math.floor(bytesToMegabytes(os.totalmem()) * Number(percentage) / 100);
+  } catch {
+    // Fall back to the portable Node.js value below.
+  }
+
+  return bytesToMegabytes(os.freemem());
+};
+
 export const detectGpu = async (): Promise<GpuInfo> => {
   if (os.platform() !== "win32") {
     return { gpu: null, vramMb: null };
@@ -88,12 +102,13 @@ export const detectGpu = async (): Promise<GpuInfo> => {
 
 export const detectHardware = async (): Promise<HardwareInfo> => {
   const gpu = await detectGpu();
+  const availableRamMb = await detectAvailableRamMb();
 
   return {
     name: os.hostname(),
     cpuCores: os.cpus().length,
     totalRamMb: bytesToMegabytes(os.totalmem()),
-    availableRamMb: bytesToMegabytes(os.freemem()),
+    availableRamMb,
     ...gpu,
     architecture: normalizeArchitecture(os.arch()),
     operatingSystem: normalizeOperatingSystem(os.platform()),
@@ -101,6 +116,6 @@ export const detectHardware = async (): Promise<HardwareInfo> => {
 };
 
 export const detectDynamicResources = async (): Promise<DynamicHardwareInfo> => ({
-  availableRamMb: bytesToMegabytes(os.freemem()),
+  availableRamMb: await detectAvailableRamMb(),
   ...(await detectGpu()),
 });

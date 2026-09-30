@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  detectAvailableRamMb,
   detectHardware,
   normalizeArchitecture,
   normalizeOperatingSystem,
@@ -19,6 +20,12 @@ test("detectHardware returns normalized resource data", async () => {
   assert.ok(hardware.vramMb === null || (Number.isInteger(hardware.vramMb) && hardware.vramMb > 0));
   assert.ok(hardware.architecture.length > 0);
   assert.ok(hardware.operatingSystem.length > 0);
+});
+
+test("detectAvailableRamMb returns a positive value", async () => {
+  const availableRamMb = await detectAvailableRamMb();
+
+  assert.ok(Number.isInteger(availableRamMb) && availableRamMb > 0);
 });
 
 test("normalizeOperatingSystem maps supported platforms", () => {

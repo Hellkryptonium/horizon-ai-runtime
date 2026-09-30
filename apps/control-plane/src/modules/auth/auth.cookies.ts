@@ -10,9 +10,11 @@ export function readSessionCookie(request: Request): string | undefined {
 }
 
 export function setSessionCookie(response: Response, token: string, secure: boolean) {
-  response.setHeader("Set-Cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}; Max-Age=2592000`);
+  const sameSite = secure ? "None" : "Lax";
+  response.setHeader("Set-Cookie", `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=${sameSite}${secure ? "; Secure" : ""}; Max-Age=2592000`);
 }
 
 export function clearSessionCookie(response: Response, secure: boolean) {
-  response.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}; Max-Age=0`);
+  const sameSite = secure ? "None" : "Lax";
+  response.setHeader("Set-Cookie", `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${sameSite}${secure ? "; Secure" : ""}; Max-Age=0`);
 }
