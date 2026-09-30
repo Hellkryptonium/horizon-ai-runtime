@@ -15,7 +15,7 @@ const model: Model = {
 };
 const worker = { id: workerId, userId, status: "ONLINE" as "ONLINE" | "OFFLINE", availableRamMb: 8000, gpu: null, vramMb: null };
 const deployment: Deployment = {
-  id: "00000000-0000-4000-8000-000000000002", modelId: model.id, workerId, status: "PENDING",
+  id: "00000000-0000-4000-8000-000000000002", userId, name: "Test deployment", modelId: model.id, workerId, status: "PENDING",
   createdAt: new Date(), updatedAt: new Date(),
 };
 
@@ -25,6 +25,9 @@ const repository = (): DeploymentRepository => ({
   async getDeployment() { return deployment; },
   async findScheduledByWorkerId() { return []; },
   async updateStatus(_id, status) { return { ...deployment, status }; },
+  async updateDeployment() { return undefined; },
+  async deleteDeployment() { return false; },
+  async markActiveByWorkerId() { return []; },
 });
 
 const workerRepository = (current = worker) => ({ getWorker: async () => current }) as never;

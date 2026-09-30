@@ -3,7 +3,10 @@ import { and, eq, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { workers } from "../../db/schema.js";
 
-export type Worker = typeof workers.$inferSelect;
+export type Worker = Omit<typeof workers.$inferSelect, "activeRequests" | "maxConcurrency"> & {
+  activeRequests?: number;
+  maxConcurrency?: number;
+};
 export type NewWorker = typeof workers.$inferInsert;
 
 export interface WorkerHeartbeatUpdate {
@@ -22,6 +25,7 @@ export interface WorkerRepository {
   updateConnectionStatus(workerId: string, status: "ONLINE" | "OFFLINE"): Promise<Worker | undefined>;
   updateHeartbeat(workerId: string, update: WorkerHeartbeatUpdate): Promise<Worker | undefined>;
   markStaleWorkers(cutoff: Date): Promise<Worker[]>;
+  revokeWorker?(workerId: string, userId: string): Promise<Worker | undefined>;
 }
 
 export const workerRepository: WorkerRepository = {
@@ -36,12 +40,12 @@ export const workerRepository: WorkerRepository = {
   },
 
   async getWorker(workerId) {
-    const [worker] = await db.select().from(workers).where(eq(workers.id, workerId));
+    const [worker] = await db.select().from(workers).where(and(eq(workers.id, workerId), isNull(workers.revokedAt)));
     return worker;
   },
 
   async getWorkerByCredentialHash(credentialHash) {
-    const [worker] = await db.select().from(workers).where(eq(workers.credentialHash, credentialHash));
+    const [worker] = await db.select().from(workers).where(and(eq(workers.credentialHash, credentialHash), isNull(workers.revokedAt)));
     return worker;
   },
 
@@ -50,7 +54,7 @@ export const workerRepository: WorkerRepository = {
   },
 
   async listWorkersForUser(userId) {
-    return db.select().from(workers).where(eq(workers.userId, userId));
+    return db.select().from(workers).where(and(eq(workers.userId, userId), isNull(workers.revokedAt)));
   },
 
   async updateWorkerForEnrollment(workerId, userId, credentialHash, worker) {
@@ -120,5 +124,14 @@ export const workerRepository: WorkerRepository = {
         ),
       )
       .returning();
+  },
+
+  async revokeWorker(workerId, userId) {
+    const [revoked] = await db
+      .update(workers)
+      .set({ revokedAt: new Date(), status: "OFFLINE", updatedAt: new Date() })
+      .where(and(eq(workers.id, workerId), eq(workers.userId, userId), isNull(workers.revokedAt)))
+      .returning();
+    return revoked;
   },
 };

@@ -7,5 +7,7 @@ export const authApi = {
   register: (input: { name: string; email: string; password: string }) => apiRequest<AuthResponse>("/api/auth/register", { method: "POST", body: JSON.stringify(input) }),
   login: (input: { email: string; password: string }) => apiRequest<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(input) }),
   getCurrentUser: () => apiRequest<AuthResponse>("/api/auth/me"),
+  updateAccount: (input: { name: string; email: string }) => apiRequest<AuthResponse>("/api/auth/me", { method: "PATCH", body: JSON.stringify(input) }),
+  deleteAccount: () => apiRequest<void>("/api/auth/me", { method: "DELETE" }),
   logout: () => apiRequest<{ success: true }>("/api/auth/logout", { method: "POST" }),
 };

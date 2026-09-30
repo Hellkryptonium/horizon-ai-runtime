@@ -17,10 +17,16 @@ export interface HeartbeatClient {
   stop(): void;
 }
 
+export interface HeartbeatLogger {
+  log(message: string): void;
+  error(message: string): void;
+}
+
 export const sendHeartbeat = async (
   workerConfig: WorkerConfig,
   workerId: string,
   resources: DynamicHardwareInfo,
+  logger: HeartbeatLogger = console,
 ): Promise<void> => {
   const endpoint = new URL(`/api/workers/${workerId}/heartbeat`, `${workerConfig.controlPlaneUrl}/`);
   const response = await fetch(endpoint, {
@@ -37,36 +43,31 @@ export const sendHeartbeat = async (
     throw new Error(`Heartbeat failed with HTTP ${response.status}`);
   }
 
-  console.log(`Heartbeat OK | RAM: ${resources.availableRamMb} MB`);
+  logger.log(`Heartbeat OK | RAM: ${resources.availableRamMb} MB`);
 };
 
 export const createHeartbeatClient = (
   workerConfig: WorkerConfig,
   detectResources = detectDynamicResources,
+  logger: HeartbeatLogger = console,
 ): HeartbeatClient => {
   let timer: NodeJS.Timeout | undefined;
 
   const sendNow = async (workerId: string) => {
     const resources = await detectResources();
-    await sendHeartbeat(workerConfig, workerId, resources);
+    await sendHeartbeat(workerConfig, workerId, resources, logger);
   };
 
   const start = (workerId: string, sendImmediately = true) => {
     if (sendImmediately) {
       void sendNow(workerId).catch((error: unknown) => {
-        console.error(
-          `Heartbeat failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
-        console.error("Will retry on next interval.");
+        logger.error(`Heartbeat failed: ${error instanceof Error ? error.message : "Unknown error"}. Will retry on next interval.`);
       });
     }
 
     timer = setInterval(() => {
       void sendNow(workerId).catch((error: unknown) => {
-        console.error(
-          `Heartbeat failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-        );
-        console.error("Will retry on next interval.");
+        logger.error(`Heartbeat failed: ${error instanceof Error ? error.message : "Unknown error"}. Will retry on next interval.`);
       });
     }, workerConfig.heartbeatIntervalMs);
   };

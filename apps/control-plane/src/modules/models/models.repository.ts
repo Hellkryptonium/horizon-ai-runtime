@@ -8,6 +8,8 @@ export interface ModelRepository {
   createModel(model: NewModel): Promise<Model>;
   listModels(): Promise<Model[]>;
   getModel(modelId: string): Promise<Model | undefined>;
+  updateModel?(modelId: string, updates: NewModel): Promise<Model | undefined>;
+  deleteModel?(modelId: string): Promise<boolean>;
 }
 
 export const modelRepository: ModelRepository = {
@@ -28,5 +30,15 @@ export const modelRepository: ModelRepository = {
   async getModel(modelId) {
     const [model] = await db.select().from(models).where(eq(models.id, modelId));
     return model;
+  },
+
+  async updateModel(modelId, updates) {
+    const [updated] = await db.update(models).set({ ...updates, updatedAt: new Date() }).where(eq(models.id, modelId)).returning();
+    return updated;
+  },
+
+  async deleteModel(modelId) {
+    const deleted = await db.delete(models).where(eq(models.id, modelId)).returning({ id: models.id });
+    return deleted.length > 0;
   },
 };

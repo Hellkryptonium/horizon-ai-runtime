@@ -5,6 +5,7 @@ import type { WorkerRepository } from "../workers/worker.repository.js";
 import type { ModelService } from "../models/models.service.js";
 import type { WorkerConnectionManager } from "../workers/worker.connection-manager.js";
 import { randomUUID } from "node:crypto";
+import type { InferenceQueue } from "../inference/inference.queue.js";
 
 export class DeploymentNotFoundError extends Error {
   readonly code = "DEPLOYMENT_NOT_FOUND";
@@ -20,7 +21,11 @@ export class DeploymentService {
     private readonly modelService: Pick<ModelService, "getModel">,
     private readonly repository: DeploymentRepository,
     private readonly workers: Pick<WorkerRepository, "getWorker">,
-    private readonly connectionManager: Pick<WorkerConnectionManager, "sendToWorker" | "isWorkerConnected" | "requestInference">,
+    private readonly connectionManager: Pick<WorkerConnectionManager, "sendToWorker" | "isWorkerConnected" | "requestInference"> & {
+      requestDeploymentStop?: WorkerConnectionManager["requestDeploymentStop"];
+    },
+    private readonly inferenceQueue?: InferenceQueue,
+    private readonly replicas?: Pick<typeof import("./replica.repository.js").replicaRepository, "create" | "listForDeployment" | "claim" | "release">,
   ) {}
 
   async createDeployment(input: DeploymentCreation, userId: string): Promise<Deployment> {
@@ -30,7 +35,7 @@ export class DeploymentService {
     if (worker.status !== "ONLINE" || !this.connectionManager.isWorkerConnected(worker.id)) {
       throw new WorkerOfflineError();
     }
-    if (model.runtime !== "ollama"
+    if (model.runtime !== "ollama" && model.runtime !== "docker-fastapi"
       || worker.availableRamMb < model.minRamMb
       || (model.requiresGpu && !worker.gpu)
       || (model.minVramMb !== null && (worker.vramMb ?? 0) < model.minVramMb)) {
@@ -38,6 +43,8 @@ export class DeploymentService {
     }
 
     const deployment = await this.repository.createDeployment({
+      userId,
+      name: input.name ?? "Deployment",
       modelId: model.id,
       workerId: worker.id,
       status: "PENDING",
@@ -47,37 +54,138 @@ export class DeploymentService {
       version: 1,
       requestId: deployment.id,
       workerId: worker.id,
-      payload: { deploymentId: deployment.id, modelId: model.id, runtime: "ollama" },
+      payload: { deploymentId: deployment.id, modelId: model.id, runtime: model.runtime, runtimeModelId: model.runtimeModelId },
     });
     if (!sent) {
       await this.repository.updateStatus(deployment.id, "FAILED");
       throw new WorkerOfflineError();
     }
     await this.repository.updateStatus(deployment.id, "DEPLOYING");
+    if (this.replicas) {
+      const workerIds = [...new Set([worker.id, ...(input.workerIds ?? [])])];
+      for (const selectedWorkerId of workerIds.slice(1)) {
+        const selectedWorker = await this.workers.getWorker(selectedWorkerId);
+        if (!selectedWorker || selectedWorker.userId !== userId || selectedWorker.status !== "ONLINE" || !this.connectionManager.isWorkerConnected(selectedWorker.id)) {
+          throw new WorkerOfflineError();
+        }
+        await this.replicas.create(deployment.id, selectedWorker.id);
+        this.connectionManager.sendToWorker(selectedWorker.id, {
+          type: "deployment.command", version: 1, requestId: deployment.id, workerId: selectedWorker.id,
+          payload: { deploymentId: deployment.id, modelId: model.id, runtime: model.runtime, runtimeModelId: model.runtimeModelId },
+        });
+      }
+    }
     return { ...deployment, status: "DEPLOYING" };
   }
 
-  listDeployments(): Promise<Deployment[]> {
-    return this.repository.listDeployments();
+  listDeployments(userId: string): Promise<Deployment[]> {
+    return this.repository.listDeployments(userId);
   }
 
-  async getDeployment(deploymentId: string): Promise<Deployment> {
-    const deployment = await this.repository.getDeployment(deploymentId);
+  async getDeployment(deploymentId: string, userId?: string): Promise<Deployment> {
+    const deployment = await this.repository.getDeployment(deploymentId, userId);
 
     if (!deployment) throw new DeploymentNotFoundError();
     return deployment;
   }
 
-  async inferDeployment(deploymentId: string, userId: string, prompt: string) {
-    const deployment = await this.getDeployment(deploymentId);
+  async inferDeployment(deploymentId: string, userId: string, prompt: string, requestId?: string) {
+    const deployment = await this.getDeployment(deploymentId, userId);
     const worker = await this.workers.getWorker(deployment.workerId);
     if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
     if (deployment.status !== "RUNNING") throw new DeploymentNotRunningError();
     if (!this.connectionManager.isWorkerConnected(worker.id)) throw new WorkerOfflineError();
 
-    const result = await this.connectionManager.requestInference(worker.id, deployment.id, randomUUID(), prompt);
-    if (!result.success) throw new InferenceFailedError(result.error || "Inference failed.");
-    return result.response || "";
+    const run = async () => {
+      const selectedWorker = await this.selectReplica(deployment.id, worker);
+      try {
+        const result = await this.connectionManager.requestInference(selectedWorker.id, deployment.id, requestId || randomUUID(), prompt);
+        if (!result.success) throw new InferenceFailedError(result.error || "Inference failed.");
+        return result.response || "";
+      } finally {
+        await this.replicas?.release(selectedWorker.id, deployment.id);
+      }
+    };
+    if (this.inferenceQueue) return this.inferenceQueue.enqueue({ requestId, deploymentId: deployment.id, userId, prompt, run });
+    const result = await run();
+    return result;
+  }
+
+  private async selectReplica(deploymentId: string, fallback: Awaited<ReturnType<WorkerRepository["getWorker"]>> extends infer T ? NonNullable<T> : never) {
+    if (!this.replicas) return fallback;
+    const candidates = await this.replicas.listForDeployment(deploymentId);
+    for (const candidate of candidates) {
+      const selected = await this.workers.getWorker(candidate.workerId);
+      if (selected && selected.status === "ONLINE" && this.connectionManager.isWorkerConnected(selected.id) && (await this.replicas.claim(selected.id, deploymentId)).length) return selected;
+    }
+    return fallback;
+  }
+
+  async renameDeployment(deploymentId: string, userId: string, name: string) {
+    const deployment = await this.repository.updateDeployment(deploymentId, userId, { name });
+    if (!deployment) throw new DeploymentNotFoundError();
+    return deployment;
+  }
+
+  async deleteDeployment(deploymentId: string, userId: string) {
+    const deployment = await this.getDeployment(deploymentId, userId);
+    if (["PENDING", "DEPLOYING", "RUNNING", "STOPPING"].includes(deployment.status)) {
+      throw new DeploymentActiveError();
+    }
+    await this.repository.deleteDeployment(deploymentId, userId);
+  }
+
+  async stopDeployment(deploymentId: string, userId: string) {
+    const deployment = await this.getDeployment(deploymentId, userId);
+    if (deployment.status === "STOPPED" || deployment.status === "FAILED") return deployment;
+    if (deployment.status === "STOPPING") return deployment;
+    if (deployment.status !== "RUNNING") throw new DeploymentNotRunningError();
+    if (!this.connectionManager.requestDeploymentStop) throw new DeploymentStopFailedError("Deployment stop is unavailable.");
+
+    const worker = await this.workers.getWorker(deployment.workerId);
+    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (!this.connectionManager.isWorkerConnected(worker.id)) throw new WorkerOfflineError();
+
+    await this.repository.updateStatus(deployment.id, "STOPPING");
+    try {
+      const stopped = await this.connectionManager.requestDeploymentStop(worker.id, deployment.id, randomUUID());
+      if (!stopped) throw new DeploymentStopFailedError("Worker could not stop the deployment.");
+    } catch (error) {
+      await this.repository.updateStatus(deployment.id, "FAILED");
+      if (error instanceof DeploymentStopFailedError) throw error;
+      throw new DeploymentStopFailedError(error instanceof Error ? error.message : "Deployment stop failed.");
+    }
+
+    const stopped = await this.repository.updateStatus(deployment.id, "STOPPED");
+    return stopped ?? { ...deployment, status: "STOPPED" as const };
+  }
+
+  async restartDeployment(deploymentId: string, userId: string) {
+    let deployment = await this.getDeployment(deploymentId, userId);
+    if (deployment.status === "RUNNING") deployment = await this.stopDeployment(deploymentId, userId);
+    if (!["STOPPED", "FAILED"].includes(deployment.status)) throw new DeploymentNotRunningError();
+
+    const model = await this.modelService.getModel(deployment.modelId);
+    const worker = await this.workers.getWorker(deployment.workerId);
+    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (worker.status !== "ONLINE" || !this.connectionManager.isWorkerConnected(worker.id)) throw new WorkerOfflineError();
+    if (model.runtime !== "ollama" && model.runtime !== "docker-fastapi"
+      || worker.availableRamMb < model.minRamMb
+      || (model.requiresGpu && !worker.gpu)
+      || (model.minVramMb !== null && (worker.vramMb ?? 0) < model.minVramMb)) {
+      throw new WorkerIncompatibleError();
+    }
+
+    const sent = this.connectionManager.sendToWorker(worker.id, {
+      type: "deployment.command",
+      version: 1,
+      requestId: deployment.id,
+      workerId: worker.id,
+      payload: { deploymentId: deployment.id, modelId: model.id, runtime: model.runtime, runtimeModelId: model.runtimeModelId },
+    });
+    if (!sent) throw new WorkerOfflineError();
+    await this.repository.updateStatus(deployment.id, "DEPLOYING");
+    return { ...deployment, status: "DEPLOYING" as const };
   }
 }
 
@@ -169,4 +277,22 @@ export class DeploymentNotRunningError extends Error {
 
 export class InferenceFailedError extends Error {
   readonly code = "INFERENCE_FAILED";
+}
+
+export class DeploymentActiveError extends Error {
+  readonly code = "DEPLOYMENT_ACTIVE";
+
+  constructor() {
+    super("Stop the deployment before deleting it.");
+    this.name = "DeploymentActiveError";
+  }
+}
+
+export class DeploymentStopFailedError extends Error {
+  readonly code = "DEPLOYMENT_STOP_FAILED";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "DeploymentStopFailedError";
+  }
 }

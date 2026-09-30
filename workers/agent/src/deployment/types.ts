@@ -32,7 +32,23 @@ export interface DeploymentCommand {
   version: 1;
   requestId: string;
   workerId: string;
-  payload: { deploymentId: string; modelId: string; runtime: "ollama" };
+  payload: { deploymentId: string; modelId: string; runtime: "ollama" | "docker-fastapi"; runtimeModelId?: string | null };
+}
+
+export interface DeploymentStopCommand {
+  type: "deployment.stop";
+  version: 1;
+  requestId: string;
+  workerId: string;
+  payload: { deploymentId: string };
+}
+
+export interface TerminalCommand {
+  type: "terminal.command";
+  version: 1;
+  requestId: string;
+  workerId: string;
+  payload: { command: string };
 }
 
 export interface InferenceCommand {

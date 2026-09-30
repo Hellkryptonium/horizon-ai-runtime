@@ -6,11 +6,14 @@ export interface WorkerConfig {
   controlPlaneUrl: string;
   ollamaBaseUrl: string;
   ollamaRequestTimeoutMs: number;
+  dockerRequestTimeoutMs: number;
+  dockerApprovedImages: string;
   workerName?: string;
   enrollmentToken?: string;
   forceReenrollment?: boolean;
   heartbeatIntervalMs: number;
   identityFilePath: string;
+  interactive?: boolean;
 }
 
 const parsePositiveInteger = (name: string, value: string | undefined, fallback: number) => {
@@ -45,6 +48,7 @@ const workerName = process.env.WORKER_NAME?.trim();
 const tokenArgument = process.argv.find((argument) => argument.startsWith("--token="))?.slice("--token=".length)
   || (process.argv.includes("--token") ? process.argv[process.argv.indexOf("--token") + 1] : undefined);
 const enrollmentToken = tokenArgument?.trim() || process.env.WORKER_ENROLLMENT_TOKEN?.trim();
+const interactive = process.argv.includes("--interactive");
 const ollamaBaseUrl = process.env.OLLAMA_BASE_URL?.trim() || "http://localhost:11434";
 
 try {
@@ -67,6 +71,12 @@ export const config: WorkerConfig = {
     process.env.OLLAMA_REQUEST_TIMEOUT_MS,
     30_000,
   ),
+  dockerRequestTimeoutMs: parsePositiveInteger(
+    "DOCKER_REQUEST_TIMEOUT_MS",
+    process.env.DOCKER_REQUEST_TIMEOUT_MS,
+    60_000,
+  ),
+  dockerApprovedImages: process.env.DOCKER_APPROVED_IMAGES?.trim() || "horizon/ml-sentiment:0.1",
   workerName: workerName || undefined,
   enrollmentToken: enrollmentToken || undefined,
   forceReenrollment: Boolean(tokenArgument),
@@ -76,4 +86,5 @@ export const config: WorkerConfig = {
     10_000,
   ),
   identityFilePath: resolve(dirname(fileURLToPath(import.meta.url)), "..", ".data", "worker.json"),
+  interactive,
 };

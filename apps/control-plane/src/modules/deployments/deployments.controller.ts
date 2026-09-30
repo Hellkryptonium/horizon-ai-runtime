@@ -12,8 +12,19 @@ import {
   WorkerIncompatibleError,
   DeploymentNotRunningError,
   InferenceFailedError,
+  DeploymentActiveError,
+  DeploymentStopFailedError,
 } from "./deployments.service.js";
-import { deploymentCreationSchema } from "./deployments.validation.js";
+import { deploymentCreationSchema, deploymentUpdateSchema } from "./deployments.validation.js";
+import { z } from "zod";
+import { InferenceQueueFullError } from "../inference/inference.queue.js";
+
+const chatCompletionRequest = z.object({
+  model: z.string().min(1),
+  messages: z.array(z.object({ role: z.enum(["system", "user", "assistant"]), content: z.string().min(1) })).min(1),
+});
+
+const tokenCount = (value: string) => Math.max(1, Math.ceil(value.trim().length / 4));
 
 export class DeploymentController {
   constructor(private readonly service: DeploymentService) {}
@@ -55,9 +66,13 @@ export class DeploymentController {
     }
   };
 
-  list = async (_request: Request, response: Response, next: NextFunction) => {
+  list = async (request: Request, response: Response, next: NextFunction) => {
+    if (!request.authenticatedUser) {
+      response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } });
+      return;
+    }
     try {
-      const deployments = await this.service.listDeployments();
+      const deployments = await this.service.listDeployments(request.authenticatedUser.id);
       response.json({ success: true, deployments });
     } catch (error) {
       next(error);
@@ -66,6 +81,7 @@ export class DeploymentController {
 
   get = async (request: Request, response: Response, next: NextFunction) => {
     const deploymentId = request.params.deploymentId;
+    if (typeof deploymentId !== "string") { response.status(400).json({ success: false, error: "Invalid deployment ID" }); return; }
 
     if (typeof deploymentId !== "string") {
       response.status(400).json({ success: false, error: "Invalid deployment ID" });
@@ -78,7 +94,7 @@ export class DeploymentController {
     }
 
     try {
-      const deployment = await this.service.getDeployment(deploymentId);
+      const deployment = await this.service.getDeployment(deploymentId, request.authenticatedUser?.id);
       response.json({ success: true, deployment });
     } catch (error) {
       if (error instanceof DeploymentNotFoundError) {
@@ -109,8 +125,8 @@ export class DeploymentController {
       return;
     }
     try {
-      const inference = await this.service.inferDeployment(deploymentId, request.authenticatedUser.id, prompt);
-      response.json({ success: true, response: inference });
+      const inference = await this.service.inferDeployment(deploymentId, request.authenticatedUser.id, prompt, request.requestId);
+      response.json({ success: true, response: inference, requestId: request.requestId });
     } catch (error) {
       if (error instanceof DeploymentNotFoundError || error instanceof WorkerNotFoundError) {
         response.status(404).json({ success: false, error: { code: error.code, message: error.message } });
@@ -122,6 +138,115 @@ export class DeploymentController {
       }
       if (error instanceof InferenceFailedError) {
         response.status(502).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      if (error instanceof InferenceQueueFullError) {
+        response.status(429).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      next(error);
+    }
+  };
+
+  chatCompletions = async (request: Request, response: Response, next: NextFunction) => {
+    const parsed = chatCompletionRequest.safeParse(request.body);
+    const deploymentId = request.body?.deployment_id ?? request.body?.deploymentId;
+    if (!parsed.success || typeof deploymentId !== "string" || !request.authenticatedUser) {
+      response.status(!request.authenticatedUser ? 401 : 400).json({ error: { message: !request.authenticatedUser ? "A valid API key is required." : "deployment_id and messages are required.", type: "invalid_request_error" } });
+      return;
+    }
+    const prompt = parsed.data.messages.map((message) => `${message.role}: ${message.content}`).join("\n");
+    try {
+      const content = await this.service.inferDeployment(deploymentId, request.authenticatedUser.id, prompt, request.requestId);
+      const promptTokens = tokenCount(prompt);
+      const completionTokens = tokenCount(content);
+      response.json({ id: `chatcmpl-${request.requestId}`, object: "chat.completion", created: Math.floor(Date.now() / 1000), model: parsed.data.model, choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: promptTokens + completionTokens } });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  update = async (request: Request, response: Response, next: NextFunction) => {
+    const deploymentId = request.params.deploymentId;
+    if (typeof deploymentId !== "string") { response.status(400).json({ success: false, error: "Invalid deployment ID" }); return; }
+    const result = deploymentUpdateSchema.safeParse(request.body);
+    if (!result.success || !request.authenticatedUser) {
+      response.status(!request.authenticatedUser ? 401 : 400).json({ success: false, error: !request.authenticatedUser ? { code: "UNAUTHENTICATED", message: "Authentication required." } : "Invalid deployment update" });
+      return;
+    }
+    try {
+      const deployment = await this.service.renameDeployment(deploymentId, request.authenticatedUser.id, result.data.name);
+      response.json({ success: true, deployment });
+    } catch (error) {
+      if (error instanceof DeploymentNotFoundError) { response.status(404).json({ success: false, error: { code: error.code, message: error.message } }); return; }
+      next(error);
+    }
+  };
+
+  remove = async (request: Request, response: Response, next: NextFunction) => {
+    if (!request.authenticatedUser) { response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } }); return; }
+    const deploymentId = request.params.deploymentId;
+    if (typeof deploymentId !== "string") { response.status(400).json({ success: false, error: "Invalid deployment ID" }); return; }
+    try {
+      await this.service.deleteDeployment(deploymentId, request.authenticatedUser.id);
+      response.status(204).send();
+    } catch (error) {
+      if (error instanceof DeploymentNotFoundError) { response.status(404).json({ success: false, error: { code: error.code, message: error.message } }); return; }
+      if (error instanceof DeploymentActiveError) { response.status(409).json({ success: false, error: { code: error.code, message: error.message } }); return; }
+      next(error);
+    }
+  };
+
+  stop = async (request: Request, response: Response, next: NextFunction) => {
+    if (!request.authenticatedUser) {
+      response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } });
+      return;
+    }
+    const deploymentId = request.params.deploymentId;
+    if (typeof deploymentId !== "string") {
+      response.status(400).json({ success: false, error: "Invalid deployment ID" });
+      return;
+    }
+    try {
+      const deployment = await this.service.stopDeployment(deploymentId, request.authenticatedUser.id);
+      response.json({ success: true, deployment });
+    } catch (error) {
+      if (error instanceof DeploymentNotFoundError) {
+        response.status(404).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      if (error instanceof DeploymentNotRunningError || error instanceof WorkerOfflineError) {
+        response.status(409).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      if (error instanceof DeploymentStopFailedError) {
+        response.status(502).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      next(error);
+    }
+  };
+
+  restart = async (request: Request, response: Response, next: NextFunction) => {
+    if (!request.authenticatedUser) {
+      response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } });
+      return;
+    }
+    const deploymentId = request.params.deploymentId;
+    if (typeof deploymentId !== "string") {
+      response.status(400).json({ success: false, error: "Invalid deployment ID" });
+      return;
+    }
+    try {
+      const deployment = await this.service.restartDeployment(deploymentId, request.authenticatedUser.id);
+      response.json({ success: true, deployment });
+    } catch (error) {
+      if (error instanceof DeploymentNotFoundError || error instanceof WorkerNotFoundError) {
+        response.status(404).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      if (error instanceof DeploymentNotRunningError || error instanceof WorkerOfflineError || error instanceof WorkerIncompatibleError) {
+        response.status(409).json({ success: false, error: { code: error.code, message: error.message } });
         return;
       }
       next(error);

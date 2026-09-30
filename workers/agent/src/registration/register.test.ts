@@ -9,6 +9,8 @@ const config: WorkerConfig = {
   controlPlaneUrl: "http://localhost:4000",
   ollamaBaseUrl: "http://localhost:11434",
   ollamaRequestTimeoutMs: 1000,
+  dockerRequestTimeoutMs: 1000,
+  dockerApprovedImages: "horizon/ml-sentiment:0.1",
   heartbeatIntervalMs: 1000,
   identityFilePath: "worker.json",
 };

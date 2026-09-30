@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 
 import { env } from "../../config/env.js";
 import { clearSessionCookie, readSessionCookie, setSessionCookie } from "./auth.cookies.js";
-import { AuthService, DuplicateEmailError, InvalidCredentialsError, loginSchema, registerSchema } from "./auth.service.js";
+import { accountUpdateSchema, AuthService, DuplicateEmailError, InvalidCredentialsError, loginSchema, registerSchema } from "./auth.service.js";
 
 export class AuthController {
   constructor(private readonly service: AuthService) {}
@@ -62,5 +62,39 @@ export class AuthController {
       clearSessionCookie(response, env.NODE_ENV === "production");
       response.json({ success: true });
     } catch (error: unknown) { next(error); }
+  };
+
+  updateAccount = async (request: Request, response: Response, next: NextFunction) => {
+    const result = accountUpdateSchema.safeParse(request.body);
+    if (!result.success || !request.authenticatedUser) {
+      response.status(!request.authenticatedUser ? 401 : 400).json({ success: false, error: !request.authenticatedUser ? { code: "UNAUTHENTICATED", message: "Authentication required." } : "Invalid account details" });
+      return;
+    }
+    try {
+      const user = await this.service.updateAccount(request.authenticatedUser.id, result.data);
+      if (!user) {
+        response.status(404).json({ success: false, error: { code: "USER_NOT_FOUND", message: "Account not found." } });
+        return;
+      }
+      response.json({ success: true, user });
+    } catch (error) {
+      if (error instanceof DuplicateEmailError) {
+        response.status(409).json({ success: false, error: { code: error.code, message: "That email is already in use." } });
+        return;
+      }
+      next(error);
+    }
+  };
+
+  deleteAccount = async (request: Request, response: Response, next: NextFunction) => {
+    if (!request.authenticatedUser) {
+      response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } });
+      return;
+    }
+    try {
+      await this.service.deleteAccount(request.authenticatedUser.id);
+      clearSessionCookie(response, env.NODE_ENV === "production");
+      response.status(204).send();
+    } catch (error) { next(error); }
   };
 }

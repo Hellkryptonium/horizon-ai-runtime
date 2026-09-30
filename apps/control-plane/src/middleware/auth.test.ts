@@ -16,6 +16,8 @@ const createRepository = (): AuthRepository => {
     createSession: async () => session,
     findValidSession: async (tokenHash) => tokenHash === session.tokenHash ? { ...session, user } : undefined,
     deleteSession: async () => undefined,
+    updateUser: async (_userId, updates) => ({ ...user, ...updates }),
+    deleteUser: async () => undefined,
   };
 };
 

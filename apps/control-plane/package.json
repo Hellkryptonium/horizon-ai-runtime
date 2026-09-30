@@ -10,6 +10,8 @@
     "test": "vitest run",
     "db:cleanup:test-workers": "tsx src/scripts/cleanup-test-workers.ts",
     "db:reset:test-runtime": "tsx src/scripts/reset-test-runtime.ts",
+    "db:audit:ownership": "tsx src/scripts/audit-ownership.ts",
+    "db:cleanup:orphan-deployments": "tsx src/scripts/cleanup-orphan-deployments.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config drizzle.config.ts"
   },

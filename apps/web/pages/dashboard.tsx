@@ -9,7 +9,6 @@ export default function Dashboard() {
   const stats = [
     { label: "Connected hardware", value: String(workers.length), detail: `${workers.filter((worker) => worker.status === "ONLINE").length} online`, tone: "green" },
     { label: "Deployments", value: String(deployments.length), detail: `${deployments.filter((deployment) => deployment.status === "running").length} running`, tone: "amber" },
-    { label: "API requests", value: "Unavailable", detail: "Usage tracking is not available yet", tone: "neutral" },
     { label: "Compute available", value: `${Math.round(workers.reduce((total, worker) => total + worker.availableRamMb, 0) / 1024)} GB`, detail: "Across connected workers", tone: "blue" },
   ];
   return <>

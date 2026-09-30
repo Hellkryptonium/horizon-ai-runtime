@@ -4,6 +4,7 @@ import {
   WorkerService,
   workerEnrollmentSchema,
   workerHeartbeatSchema,
+  WorkerHasActiveDeploymentsError,
 } from "./worker.service.js";
 import { InvalidWorkerEnrollmentError, WorkerEnrollmentService, WorkerOwnershipError } from "./enrollment.service.js";
 
@@ -94,6 +95,32 @@ export class WorkerController {
         status: worker.status,
       });
     } catch (error) {
+      next(error);
+    }
+  };
+
+  revoke = async (request: Request, response: Response, next: NextFunction) => {
+    if (!request.authenticatedUser) {
+      response.status(401).json({ success: false, error: { code: "UNAUTHENTICATED", message: "Authentication required." } });
+      return;
+    }
+    const workerId = request.params.workerId;
+    if (typeof workerId !== "string") {
+      response.status(400).json({ success: false, error: "Invalid worker ID" });
+      return;
+    }
+    try {
+      const worker = await this.service.revokeWorker(workerId, request.authenticatedUser.id);
+      if (!worker) {
+        response.status(404).json({ success: false, error: { code: "WORKER_NOT_FOUND", message: "Worker not found." } });
+        return;
+      }
+      response.status(204).send();
+    } catch (error) {
+      if (error instanceof WorkerHasActiveDeploymentsError) {
+        response.status(409).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
       next(error);
     }
   };

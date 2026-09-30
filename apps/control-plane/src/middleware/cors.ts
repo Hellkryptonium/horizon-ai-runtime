@@ -5,7 +5,7 @@ export const createCorsMiddleware = (origins: string[]): RequestHandler => (requ
   if (origin && origins.includes(origin)) {
     response.setHeader("Access-Control-Allow-Origin", origin);
     response.setHeader("Access-Control-Allow-Credentials", "true");
-    response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-Id, Accept");
     response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
     response.setHeader("Vary", "Origin");
   }

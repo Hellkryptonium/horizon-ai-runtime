@@ -36,12 +36,22 @@ export class WorkerConnectionManager {
     reject: (error: Error) => void;
     timer: NodeJS.Timeout;
   }>();
+  private readonly deploymentStopRequests = new Map<string, {
+    resolve: (success: boolean) => void;
+    reject: (error: Error) => void;
+    timer: NodeJS.Timeout;
+  }>();
+  private readonly terminalRequests = new Map<string, {
+    resolve: (result: { output: { kind: string; text: string }[]; exit?: boolean }) => void;
+    reject: (error: Error) => void;
+    timer: NodeJS.Timeout;
+  }>();
   private readonly server = new WebSocketServer({ noServer: true });
   private readonly pingTimer: NodeJS.Timeout;
 
   constructor(
     private readonly workers: WorkerRepository,
-    private readonly deployments?: Pick<DeploymentRepository, "updateStatus">,
+    private readonly deployments?: Pick<DeploymentRepository, "updateStatus" | "markActiveByWorkerId">,
   ) {
     this.pingTimer = setInterval(() => this.pingConnections(), PING_INTERVAL_MS);
     this.pingTimer.unref();
@@ -104,6 +114,42 @@ export class WorkerConnectionManager {
       })) {
         clearTimeout(timer);
         this.inferenceRequests.delete(requestId);
+        reject(new Error("Worker is not connected."));
+      }
+    });
+  }
+
+  requestDeploymentStop(workerId: string, deploymentId: string, requestId: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.deploymentStopRequests.delete(requestId);
+        reject(new Error("Deployment stop request timed out."));
+      }, INFERENCE_TIMEOUT_MS);
+      this.deploymentStopRequests.set(requestId, { resolve, reject, timer });
+      if (!this.sendToWorker(workerId, {
+        type: "deployment.stop",
+        version: 1,
+        requestId,
+        workerId,
+        payload: { deploymentId },
+      })) {
+        clearTimeout(timer);
+        this.deploymentStopRequests.delete(requestId);
+        reject(new Error("Worker is not connected."));
+      }
+    });
+  }
+
+  requestTerminalCommand(workerId: string, requestId: string, command: string): Promise<{ output: { kind: string; text: string }[]; exit?: boolean }> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.terminalRequests.delete(requestId);
+        reject(new Error("Terminal command timed out."));
+      }, INFERENCE_TIMEOUT_MS);
+      this.terminalRequests.set(requestId, { resolve, reject, timer });
+      if (!this.sendToWorker(workerId, { type: "terminal.command", version: 1, requestId, workerId, payload: { command } })) {
+        clearTimeout(timer);
+        this.terminalRequests.delete(requestId);
         reject(new Error("Worker is not connected."));
       }
     });
@@ -178,6 +224,23 @@ export class WorkerConnectionManager {
         );
         return;
       }
+      if (result.data.type === "deployment.stop.result") {
+        const pending = this.deploymentStopRequests.get(result.data.requestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.deploymentStopRequests.delete(result.data.requestId);
+        pending.resolve(result.data.payload.success);
+        return;
+      }
+      if (result.data.type === "terminal.result") {
+        const pending = this.terminalRequests.get(result.data.requestId);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        this.terminalRequests.delete(result.data.requestId);
+        if (result.data.payload.success) pending.resolve(result.data.payload);
+        else pending.reject(new Error(result.data.payload.error || "Terminal command failed."));
+        return;
+      }
       if (result.data.type === "inference.result") {
         const pending = this.inferenceRequests.get(result.data.requestId);
         if (!pending) return;
@@ -199,6 +262,7 @@ export class WorkerConnectionManager {
       if (this.connections.get(workerId) !== connection) return;
       this.connections.delete(workerId);
       void this.workers.updateConnectionStatus(workerId, "OFFLINE");
+      void this.deployments?.markActiveByWorkerId(workerId, "FAILED");
     });
 
     connection.on("error", () => connection.close());

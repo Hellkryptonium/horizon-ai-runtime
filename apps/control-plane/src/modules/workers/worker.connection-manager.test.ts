@@ -25,6 +25,7 @@ const workerRecord = (): Worker => ({
   lastHeartbeat: null,
   createdAt: new Date(),
   updatedAt: new Date(),
+  revokedAt: null,
 });
 
 const waitFor = async (predicate: () => boolean, timeoutMs = 1000) => {

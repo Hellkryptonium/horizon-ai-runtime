@@ -43,6 +43,16 @@ const createFakeRepository = async (existing: UserRecord[] = []): Promise<AuthRe
       const index = sessions.findIndex((session) => session.tokenHash === tokenHash);
       if (index >= 0) sessions.splice(index, 1);
     },
+    async updateUser(id, updates) {
+      const user = users.find((candidate) => candidate.id === id);
+      if (!user) return undefined;
+      Object.assign(user, updates, { updatedAt: new Date() });
+      return user;
+    },
+    async deleteUser(id) {
+      const index = users.findIndex((user) => user.id === id);
+      if (index >= 0) users.splice(index, 1);
+    },
   };
 };
 

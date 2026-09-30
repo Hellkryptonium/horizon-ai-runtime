@@ -9,6 +9,7 @@ test("detects Ollama health and locally available models", async () => {
   const provisioner = new OllamaProvisioner({
     baseUrl: "http://localhost:11434",
     timeoutMs: 1000,
+    platform: "linux",
     fetchImpl: async (input) => {
       const path = new URL(String(input)).pathname;
       calls.push(path);

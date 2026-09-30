@@ -1,9 +1,9 @@
 export type WorkerStatus = "ONLINE" | "OFFLINE" | "BUSY";
-export type DeploymentStatus = "PENDING" | "DEPLOYING" | "RUNNING" | "FAILED";
+export type DeploymentStatus = "PENDING" | "SCHEDULED" | "DEPLOYING" | "RUNNING" | "STOPPING" | "STOPPED" | "FAILED";
 export type User = { id: string; name: string; email: string };
-export type ApiToken = { id: string; name: string; preview: string; createdAt: string };
-export type Status = "online" | "running" | "deploying" | "offline" | "pending" | "failed";
-export type Model = { id: string; name: string; version: string; runtime: string; format: string; size: string; ram: string; gpu: string };
+export type ApiToken = { id: string; name: string; prefix: string; scopes: string[]; expiresAt: string | null; lastUsedAt: string | null; createdAt: string };
+export type Status = "online" | "running" | "deploying" | "stopping" | "stopped" | "offline" | "pending" | "failed";
+export type Model = { id: string; name: string; version: string; runtime: string; format: string; size: string; ram: string; gpu: string; metadata: { name: string; version: string; format: string; runtime: string; runtimeModelId: string | null; sizeMb: number; minRamMb: number; minVramMb: number | null; requiresGpu: boolean; modelArchitecture: string; contextLength: number | null; downloadUrl: string | null } };
 export type Deployment = { id: string; name: string; model: string; modelId: string; status: Status; worker: string; workerId: string; created: string; endpoint: string; runtime: string };
 export type OwnedWorker = {
 	id: string;

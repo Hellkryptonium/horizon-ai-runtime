@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { Activity, Boxes, Cpu, Gauge, HelpCircle, Layers3, LayoutDashboard, LogOut, Menu, Settings, TerminalSquare, X } from "lucide-react";
+import { Activity, Boxes, Cpu, Gauge, HelpCircle, Layers3, LayoutDashboard, LogOut, Menu, Settings, TerminalSquare, X, Zap } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUserQuery, useDeploymentsQuery, useLogoutMutation } from "../../lib/query";
@@ -12,6 +12,7 @@ const primaryNav = [
   { href: "/workers", label: "Hardware", icon: Cpu },
   { href: "/models", label: "Models", icon: Boxes },
   { href: "/developer", label: "Developer", icon: TerminalSquare },
+  { href: "/operations", label: "Operations", icon: Zap },
 ];
 
 export function DashboardLayout({ children }: { children: ReactNode }) {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 
 import type { WorkerConfig } from "../config.js";
-import type { DeploymentCommand, InferenceCommand, ProvisioningCommand } from "../deployment/types.js";
+import type { DeploymentCommand, DeploymentStopCommand, InferenceCommand, ProvisioningCommand, TerminalCommand } from "../deployment/types.js";
 
 const reconnectBaseMs = 1000;
 const reconnectMaxMs = 30_000;
@@ -43,6 +43,7 @@ const toWebSocketUrl = (controlPlaneUrl: string) => {
 export interface WorkerWebSocketClient {
   start(): Promise<void>;
   stop(): void;
+  isConnected?(): boolean;
 }
 
 export const createWorkerWebSocketClient = (
@@ -54,6 +55,8 @@ export const createWorkerWebSocketClient = (
   onDeploymentCommand?: (command: DeploymentCommand) => Promise<{ runtimeId?: string } | undefined>,
   onInferenceCommand?: (command: InferenceCommand) => Promise<string>,
   onProvisioningCommand?: (command: ProvisioningCommand) => Promise<Record<string, unknown>>, 
+  onDeploymentStopCommand?: (command: DeploymentStopCommand) => Promise<void>,
+  onTerminalCommand?: (command: TerminalCommand) => Promise<{ output: { kind: string; text: string }[]; exit: boolean }>,
 ): WorkerWebSocketClient => {
   let connection: WebSocket | undefined;
   let stopped = false;
@@ -126,6 +129,35 @@ export const createWorkerWebSocketClient = (
           }, message.requestId)));
         });
       }
+      if (message.type === "deployment.stop" && onDeploymentStopCommand) {
+        if (!isDeploymentStopCommand(message)) {
+          connection?.close(1008, "Invalid deployment stop command");
+          return;
+        }
+        void onDeploymentStopCommand(message).then(() => {
+          connection?.send(JSON.stringify(workerMessage("deployment.stop.result", workerId, {
+            deploymentId: message.payload.deploymentId,
+            success: true,
+          }, message.requestId)));
+        }).catch((error: unknown) => {
+          connection?.send(JSON.stringify(workerMessage("deployment.stop.result", workerId, {
+            deploymentId: message.payload.deploymentId,
+            success: false,
+            error: error instanceof Error ? error.message : "Deployment stop failed",
+          }, message.requestId)));
+        });
+      }
+      if (message.type === "terminal.command" && onTerminalCommand) {
+        if (!isTerminalCommand(message)) {
+          connection?.close(1008, "Invalid terminal command");
+          return;
+        }
+        void onTerminalCommand(message).then((result) => {
+          connection?.send(JSON.stringify(workerMessage("terminal.result", workerId, { success: true, ...result }, message.requestId)));
+        }).catch((error: unknown) => {
+          connection?.send(JSON.stringify(workerMessage("terminal.result", workerId, { success: false, output: [], error: error instanceof Error ? error.message : "Terminal command failed" }, message.requestId)));
+        });
+      }
       if (isProvisioningCommand(message) && onProvisioningCommand) {
         void onProvisioningCommand(message).then((data) => {
           connection?.send(JSON.stringify(workerMessage("provisioning.result", workerId, {
@@ -164,6 +196,9 @@ export const createWorkerWebSocketClient = (
       connection?.close();
       connection = undefined;
     },
+    isConnected() {
+      return connection?.readyState === WebSocketImpl.OPEN;
+    },
   };
 };
 
@@ -171,7 +206,8 @@ const isDeploymentCommand = (message: WorkerMessage): message is WorkerMessage &
   message.type === "deployment.command"
   && uuidPattern.test(String(message.payload.deploymentId))
   && uuidPattern.test(String(message.payload.modelId))
-  && message.payload.runtime === "ollama"
+  && (message.payload.runtime === "ollama" || message.payload.runtime === "docker-fastapi")
+  && (message.payload.runtimeModelId === undefined || message.payload.runtimeModelId === null || typeof message.payload.runtimeModelId === "string")
 );
 
 const isInferenceCommand = (message: WorkerMessage): message is WorkerMessage & InferenceCommand => (
@@ -179,6 +215,15 @@ const isInferenceCommand = (message: WorkerMessage): message is WorkerMessage & 
   && uuidPattern.test(String(message.payload.deploymentId))
   && typeof message.payload.prompt === "string"
   && message.payload.prompt.trim().length > 0
+);
+
+const isDeploymentStopCommand = (message: WorkerMessage): message is WorkerMessage & DeploymentStopCommand => (
+  message.type === "deployment.stop"
+  && uuidPattern.test(String(message.payload.deploymentId))
+);
+
+const isTerminalCommand = (message: WorkerMessage): message is WorkerMessage & TerminalCommand => (
+  message.type === "terminal.command" && typeof message.payload.command === "string" && message.payload.command.length <= 500
 );
 
 const isProvisioningCommand = (message: WorkerMessage): message is WorkerMessage & ProvisioningCommand => (

@@ -42,6 +42,8 @@ const worker: SchedulableWorker = {
 
 const deployment: Deployment = {
   id: "00000000-0000-4000-8000-000000000002",
+  userId: null,
+  name: null,
   modelId: model.id,
   workerId: worker.id,
   status: "SCHEDULED",
@@ -74,6 +76,9 @@ const createDeploymentRepository = (existingDeployments: Deployment[] = []): Dep
       existing.status = status;
       return existing;
     },
+    async updateDeployment() { return undefined; },
+    async deleteDeployment() { return false; },
+    async markActiveByWorkerId() { return []; },
   };
 };
 
@@ -142,26 +147,23 @@ describe("deployment routes", () => {
     expect(response.status).toBe(401);
   });
 
-  it("lists and gets deployments", async () => {
+  it("rejects deployment reads without authentication", async () => {
     const repository = createDeploymentRepository([deployment]);
     const app = createApp(undefined, createModelRepository(model), { scheduleWorkload: async () => worker }, repository);
 
     const listResponse = await request(app).get("/api/deployments");
     const getResponse = await request(app).get(`/api/deployments/${deployment.id}`);
 
-    expect(listResponse.status).toBe(200);
-    expect(listResponse.body).toEqual({ success: true, deployments: [expect.objectContaining({ id: deployment.id })] });
-    expect(getResponse.status).toBe(200);
-    expect(getResponse.body).toEqual({ success: true, deployment: expect.objectContaining({ id: deployment.id }) });
+    expect(listResponse.status).toBe(401);
+    expect(getResponse.status).toBe(401);
   });
 
-  it("returns 404 for a missing deployment", async () => {
+  it("does not reveal missing deployments without authentication", async () => {
     const response = await request(
       createApp(undefined, createModelRepository(model), { scheduleWorkload: async () => worker }, createDeploymentRepository()),
     ).get("/api/deployments/00000000-0000-4000-8000-000000000099");
 
-    expect(response.status).toBe(404);
-    expect(response.body.error.code).toBe("DEPLOYMENT_NOT_FOUND");
+    expect(response.status).toBe(401);
   });
 
   it("returns only scheduled deployments assigned to the requesting worker", async () => {

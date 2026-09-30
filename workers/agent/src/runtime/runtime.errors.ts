@@ -60,3 +60,30 @@ export class ModelHealthCheckFailedError extends Error {
     this.name = "ModelHealthCheckFailedError";
   }
 }
+
+export class DockerUnavailableError extends Error {
+  readonly code = "DOCKER_UNAVAILABLE";
+
+  constructor() {
+    super("Docker is not available on this worker.");
+    this.name = "DockerUnavailableError";
+  }
+}
+
+export class DockerImageNotAllowedError extends Error {
+  readonly code = "DOCKER_IMAGE_NOT_ALLOWED";
+
+  constructor(image: string) {
+    super(`Docker image '${image}' is not approved for this worker.`);
+    this.name = "DockerImageNotAllowedError";
+  }
+}
+
+export class DockerHealthCheckFailedError extends Error {
+  readonly code = "DOCKER_HEALTH_CHECK_FAILED";
+
+  constructor() {
+    super("Docker FastAPI service did not become healthy before the timeout.");
+    this.name = "DockerHealthCheckFailedError";
+  }
+}

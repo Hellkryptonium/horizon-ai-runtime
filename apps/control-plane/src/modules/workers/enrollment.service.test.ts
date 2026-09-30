@@ -41,6 +41,7 @@ const createWorker = (userId: string | null = null): Worker => ({
   lastHeartbeat: null,
   createdAt: new Date(),
   updatedAt: new Date(),
+  revokedAt: null,
 });
 
 const createHarness = (existingWorker?: Worker) => {
@@ -65,7 +66,7 @@ const createHarness = (existingWorker?: Worker) => {
   };
   const repository: WorkerRepository = {
     async createWorker(input) {
-      const worker = { ...createWorker(input.userId ?? null), ...input, id: input.id ?? workerId, status: input.status ?? "OFFLINE", gpu: input.gpu ?? null, vramMb: input.vramMb ?? null, architecture: input.architecture ?? null, lastHeartbeat: input.lastHeartbeat ?? null, createdAt: new Date(), updatedAt: new Date() } as Worker;
+      const worker = { ...createWorker(input.userId ?? null), ...input, id: input.id ?? workerId, status: input.status ?? "OFFLINE", gpu: input.gpu ?? null, vramMb: input.vramMb ?? null, architecture: input.architecture ?? null, lastHeartbeat: input.lastHeartbeat ?? null, createdAt: new Date(), updatedAt: new Date(), revokedAt: null } as Worker;
       workers.push(worker);
       return worker;
     },

@@ -24,6 +24,16 @@ export const modelCreationSchema = z
         message: "minVramMb is required when requiresGpu is true",
       });
     }
+    if (model.runtime === "docker-fastapi") {
+      if (!model.runtimeModelId || !/^[a-z0-9]+(?:[._/-][a-z0-9]+)*(?::[a-zA-Z0-9._-]+)?$/.test(model.runtimeModelId)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["runtimeModelId"],
+          message: "runtimeModelId must be an approved Docker image name",
+        });
+      }
+    }
   });
 
 export type ModelCreation = z.infer<typeof modelCreationSchema>;
+export const modelUpdateSchema = modelCreationSchema;

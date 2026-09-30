@@ -1,4 +1,4 @@
-import type { DeploymentCommand, InferenceCommand, PendingDeployment } from "./types.js";
+import type { DeploymentCommand, DeploymentStopCommand, InferenceCommand, PendingDeployment } from "./types.js";
 import { RuntimeManager } from "../runtime/runtime.manager.js";
 import type { RuntimeDeploymentRequest, RuntimeHandle } from "../runtime/runtime.types.js";
 
@@ -54,8 +54,8 @@ export class DeploymentHandler {
       status: "SCHEDULED",
       modelName: command.payload.modelId,
       modelVersion: "direct",
-      runtimeModelId: this.localOllamaModelId,
-      format: "ollama",
+      runtimeModelId: command.payload.runtimeModelId ?? (command.payload.runtime === "ollama" ? this.localOllamaModelId : null),
+      format: command.payload.runtime === "ollama" ? "ollama" : "docker-fastapi",
       runtime: command.payload.runtime,
       sizeMb: 1,
       minRamMb: 1,
@@ -68,5 +68,9 @@ export class DeploymentHandler {
 
   async handleInferenceCommand(command: InferenceCommand): Promise<string> {
     return this.runtimeManager.inferDeployment(command.payload.deploymentId, command.payload.prompt);
+  }
+
+  async handleStopCommand(command: DeploymentStopCommand): Promise<void> {
+    await this.runtimeManager.stopDeployment(command.payload.deploymentId);
   }
 }

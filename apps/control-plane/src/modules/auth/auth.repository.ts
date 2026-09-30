@@ -14,6 +14,8 @@ export interface AuthRepository {
   createSession(session: NewSession): Promise<SessionRecord>;
   findValidSession(tokenHash: string, now: Date): Promise<(SessionRecord & { user: UserRecord }) | undefined>;
   deleteSession(tokenHash: string): Promise<void>;
+  updateUser(userId: string, updates: { name?: string; email?: string }): Promise<UserRecord | undefined>;
+  deleteUser(userId: string): Promise<void>;
 }
 
 export const authRepository: AuthRepository = {
@@ -42,5 +44,12 @@ export const authRepository: AuthRepository = {
   },
   async deleteSession(tokenHash) {
     await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
+  },
+  async updateUser(userId, updates) {
+    const [updated] = await db.update(users).set({ ...updates, updatedAt: new Date() }).where(eq(users.id, userId)).returning();
+    return updated;
+  },
+  async deleteUser(userId) {
+    await db.delete(users).where(eq(users.id, userId));
   },
 };

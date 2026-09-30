@@ -8,6 +8,11 @@ import { FakeRuntimeAdapter } from "./runtime/fake.runtime.js";
 import { RuntimeManager } from "./runtime/runtime.manager.js";
 import { OllamaRuntimeAdapter } from "./runtime/ollama.runtime.js";
 import { OllamaProvisioner } from "./runtime/ollama.provisioner.js";
+import { DockerCliClient } from "./runtime/docker.manager.js";
+import { DockerFastApiRuntimeAdapter, parseApprovedDockerImages } from "./runtime/docker-fastapi.runtime.js";
+import { createHeartbeatClient } from "./heartbeat/heartbeat.js";
+import { startWorkerRepl } from "./terminal/repl.js";
+import { executeWorkerCommand } from "./terminal/commands.js";
 
 const printWorkerSummary = (workerId: string, hardware: Awaited<ReturnType<typeof detectHardware>>) => {
   console.log("Horizon Worker Agent");
@@ -48,6 +53,11 @@ const main = async () => {
       baseUrl: config.ollamaBaseUrl,
       timeoutMs: config.ollamaRequestTimeoutMs,
     })],
+    ["docker-fastapi", new DockerFastApiRuntimeAdapter({
+      client: new DockerCliClient({ timeoutMs: config.dockerRequestTimeoutMs }),
+      approvedImages: parseApprovedDockerImages(config.dockerApprovedImages),
+      timeoutMs: config.dockerRequestTimeoutMs,
+    })],
   ]), new Map([["ollama", new OllamaProvisioner({
     baseUrl: config.ollamaBaseUrl,
     timeoutMs: config.ollamaRequestTimeoutMs,
@@ -63,16 +73,33 @@ const main = async () => {
     (command) => deploymentHandler.handleCommand(command).then((handle) => handle ? { runtimeId: handle.runtimeId } : undefined),
     (command) => deploymentHandler.handleInferenceCommand(command),
     (command) => runtimeManager.provision("ollama", command.type, command.payload.modelId).then((result) => result as Record<string, unknown>),
+    (command) => deploymentHandler.handleStopCommand(command),
+    (command) => executeWorkerCommand(command.payload.command, { workerId, hardware, connected: () => Boolean(websocket.isConnected?.()), runtime: runtimeManager }),
   );
   await websocket.start();
+  const heartbeat = createHeartbeatClient(config, undefined, config.interactive ? {
+    log: () => undefined,
+    error: (message) => process.stderr.write(`\n[heartbeat] ${message}\n`),
+  } : undefined);
+  heartbeat.start(workerId);
   printWorkerSummary(workerId, hardware);
   console.log(`${reconnected ? "Reconnected" : "Registered"} successfully.`);
 
   const shutdown = () => {
+    heartbeat.stop();
     websocket.stop();
     console.log("Worker agent shutting down...");
     process.exit(0);
   };
+
+  if (config.interactive) {
+    void startWorkerRepl({
+      workerId,
+      hardware,
+      connected: () => Boolean(websocket.isConnected?.()),
+      runtime: runtimeManager,
+    }).then(shutdown);
+  }
 
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);

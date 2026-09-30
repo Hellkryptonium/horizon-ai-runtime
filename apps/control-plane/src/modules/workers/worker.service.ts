@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { Worker, WorkerRepository } from "./worker.repository.js";
+import type { DeploymentRepository } from "../deployments/deployments.repository.js";
 
 export const workerHeartbeatSchema = z.object({
   availableRamMb: z.number().int().nonnegative("availableRamMb must be non-negative"),
@@ -34,7 +35,10 @@ export const workerEnrollmentSchema = z.object({
 export type WorkerEnrollment = z.infer<typeof workerEnrollmentSchema>;
 
 export class WorkerService {
-  constructor(private readonly repository: WorkerRepository) {}
+  constructor(
+    private readonly repository: WorkerRepository,
+    private readonly deployments?: Pick<DeploymentRepository, "hasActiveByWorkerId">,
+  ) {}
 
   registerWorker(input: WorkerRegistration): Promise<Worker> {
     return this.repository.createWorker({
@@ -56,5 +60,22 @@ export class WorkerService {
 
   markStaleWorkers(now = new Date(), staleAfterMs = 30_000): Promise<Worker[]> {
     return this.repository.markStaleWorkers(new Date(now.getTime() - staleAfterMs));
+  }
+
+  async revokeWorker(workerId: string, userId: string) {
+    if (this.deployments?.hasActiveByWorkerId && await this.deployments.hasActiveByWorkerId(workerId)) {
+      throw new WorkerHasActiveDeploymentsError();
+    }
+    if (!this.repository.revokeWorker) throw new Error("Worker revoke is unavailable.");
+    return this.repository.revokeWorker(workerId, userId);
+  }
+}
+
+export class WorkerHasActiveDeploymentsError extends Error {
+  readonly code = "WORKER_HAS_ACTIVE_DEPLOYMENTS";
+
+  constructor() {
+    super("Stop or remove active deployments before revoking this worker.");
+    this.name = "WorkerHasActiveDeploymentsError";
   }
 }

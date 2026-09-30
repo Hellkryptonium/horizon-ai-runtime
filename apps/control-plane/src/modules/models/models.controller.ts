@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { ModelNotFoundError, ModelService } from "./models.service.js";
-import { modelCreationSchema } from "./models.validation.js";
+import { ModelInUseError, ModelNotFoundError, ModelService } from "./models.service.js";
+import { modelCreationSchema, modelUpdateSchema } from "./models.validation.js";
 
 export class ModelController {
   constructor(private readonly service: ModelService) {}
@@ -58,6 +58,47 @@ export class ModelController {
         return;
       }
 
+      next(error);
+    }
+  };
+
+  update = async (request: Request, response: Response, next: NextFunction) => {
+    const modelId = request.params.modelId;
+    const result = modelUpdateSchema.safeParse(request.body);
+    if (typeof modelId !== "string" || !result.success) {
+      response.status(400).json({ success: false, error: "Invalid model metadata" });
+      return;
+    }
+    try {
+      const model = await this.service.updateModel(modelId, result.data);
+      response.json({ success: true, model });
+    } catch (error) {
+      if (error instanceof ModelNotFoundError) {
+        response.status(404).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      next(error);
+    }
+  };
+
+  remove = async (request: Request, response: Response, next: NextFunction) => {
+    const modelId = request.params.modelId;
+    if (typeof modelId !== "string") {
+      response.status(400).json({ success: false, error: "Invalid model ID" });
+      return;
+    }
+    try {
+      await this.service.deleteModel(modelId);
+      response.status(204).send();
+    } catch (error) {
+      if (error instanceof ModelNotFoundError) {
+        response.status(404).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
+      if (error instanceof ModelInUseError) {
+        response.status(409).json({ success: false, error: { code: error.code, message: error.message } });
+        return;
+      }
       next(error);
     }
   };

@@ -10,23 +10,27 @@ import type { WorkerDeploymentService } from "../deployments/deployments.service
 import { requireAuth } from "../../middleware/auth.js";
 import { AuthService } from "../auth/auth.service.js";
 import type { WorkerConnectionManager } from "./worker.connection-manager.js";
+import type { DeploymentRepository } from "../deployments/deployments.repository.js";
 import { WorkerProvisioningController } from "./worker.provisioning.controller.js";
 import { WorkerProvisioningService } from "./worker.provisioning.service.js";
+import { WorkerTerminalController } from "./worker.terminal.controller.js";
 
 export const createWorkerRouter = (
   repository: WorkerRepository,
   auth: AuthService,
   deploymentService?: WorkerDeploymentService,
   enrollmentRepository: WorkerEnrollmentRepository = workerEnrollmentRepository,
-  connectionManager?: Pick<WorkerConnectionManager, "isWorkerConnected" | "requestProvisioning">,
+  connectionManager?: Pick<WorkerConnectionManager, "isWorkerConnected" | "requestProvisioning" | "requestTerminalCommand">,
+  deployments?: Pick<DeploymentRepository, "hasActiveByWorkerId">,
 ) => {
   const router = Router();
-  const controller = new WorkerController(new WorkerService(repository), new WorkerEnrollmentService(enrollmentRepository, repository));
+  const controller = new WorkerController(new WorkerService(repository, deployments), new WorkerEnrollmentService(enrollmentRepository, repository));
 
   router.post("/enrollment", requireAuth(auth), controller.createEnrollment);
   router.post("/enroll", controller.enroll);
   router.post("/:workerId/heartbeat", controller.heartbeat);
   router.get("/", requireAuth(auth), controller.list);
+  router.delete("/:workerId", requireAuth(auth), controller.revoke);
 
   if (deploymentService) {
     const deploymentController = new WorkerDeploymentController(deploymentService);
@@ -40,6 +44,9 @@ export const createWorkerRouter = (
     router.post("/:workerId/runtime/install", requireAuth(auth), provisioning.install);
     router.get("/:workerId/models/status", requireAuth(auth), provisioning.models);
     router.post("/:workerId/models/pull", requireAuth(auth), provisioning.pull);
+    const terminal = new WorkerTerminalController(repository, connectionManager);
+    router.post("/:workerId/terminal", requireAuth(auth), terminal.execute);
+    router.get("/:workerId/terminal/history", requireAuth(auth), terminal.historyForWorker);
   }
 
   return router;

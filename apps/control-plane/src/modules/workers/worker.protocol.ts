@@ -26,6 +26,18 @@ export const workerMessageSchema = z.discriminatedUnion("type", [
     }),
   }),
   z.object({
+    type: z.literal("terminal.result"),
+    version: z.literal(1),
+    requestId: z.string().min(1),
+    workerId: z.string().uuid(),
+    payload: z.object({
+      success: z.boolean(),
+      output: z.array(z.object({ kind: z.string(), text: z.string() })),
+      exit: z.boolean().optional(),
+      error: z.string().optional(),
+    }),
+  }),
+  z.object({
     type: z.literal("deployment.result"),
     version: z.literal(1),
     requestId: z.string().min(1),
@@ -34,6 +46,17 @@ export const workerMessageSchema = z.discriminatedUnion("type", [
       deploymentId: z.string().uuid(),
       success: z.boolean(),
       runtimeId: z.string().optional(),
+      error: z.string().optional(),
+    }),
+  }),
+  z.object({
+    type: z.literal("deployment.stop.result"),
+    version: z.literal(1),
+    requestId: z.string().min(1),
+    workerId: z.string().uuid(),
+    payload: z.object({
+      deploymentId: z.string().uuid(),
+      success: z.boolean(),
       error: z.string().optional(),
     }),
   }),
@@ -61,7 +84,8 @@ export const deploymentCommandSchema = z.object({
   payload: z.object({
     deploymentId: z.string().uuid(),
     modelId: z.string().uuid(),
-    runtime: z.literal("ollama"),
+    runtime: z.enum(["ollama", "docker-fastapi"]),
+    runtimeModelId: z.string().trim().min(1).nullable().optional(),
   }),
 });
 
@@ -73,6 +97,16 @@ export const inferenceCommandSchema = z.object({
   payload: z.object({
     deploymentId: z.string().uuid(),
     prompt: z.string().min(1),
+  }),
+});
+
+export const deploymentStopCommandSchema = z.object({
+  type: z.literal("deployment.stop"),
+  version: z.literal(1),
+  requestId: z.string().min(1),
+  workerId: z.string().uuid(),
+  payload: z.object({
+    deploymentId: z.string().uuid(),
   }),
 });
 

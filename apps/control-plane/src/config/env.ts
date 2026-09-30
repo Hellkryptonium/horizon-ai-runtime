@@ -6,6 +6,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   WEB_ORIGINS: z.string().default("http://localhost:3000"),
+  PUBLIC_API_URL: z.string().url().optional(),
 });
 
 const result = envSchema.safeParse(process.env);
