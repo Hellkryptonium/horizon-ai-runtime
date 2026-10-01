@@ -1,12 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  DockerImageNotAllowedError,
-  DockerHealthCheckFailedError,
-  DockerUnavailableError,
-  ModelHealthCheckFailedError,
-  ModelStartFailedError,
-} from "./runtime.errors.js";
-import type { DockerClient, DockerContainerStatus } from "./docker.manager.js";
+import { DockerImageNotAllowedError, DockerHealthCheckFailedError, ModelHealthCheckFailedError, ModelStartFailedError } from "./runtime.errors.js";
 import type { RuntimeAdapter, RuntimeDeploymentRequest, RuntimeHandle } from "./runtime.types.js";
 
 type Fetch = typeof fetch;
@@ -14,11 +7,10 @@ type Fetch = typeof fetch;
 const imagePattern = /^[a-z0-9]+(?:[._/-][a-z0-9]+)*(?::[a-zA-Z0-9._-]+)?$/;
 
 export interface DockerFastApiRuntimeOptions {
-  client: DockerClient;
+  baseUrl: string;
   approvedImages: ReadonlySet<string>;
   timeoutMs: number;
   healthPollIntervalMs?: number;
-  networkName?: string;
   fetchImpl?: Fetch;
 }
 
@@ -29,40 +21,25 @@ export interface DockerPrediction {
 
 export class DockerFastApiRuntimeAdapter implements RuntimeAdapter {
   private readonly handles = new Map<string, RuntimeHandle>();
-  private readonly client: DockerClient;
   private readonly approvedImages: ReadonlySet<string>;
   private readonly timeoutMs: number;
   private readonly healthPollIntervalMs: number;
-  private readonly networkName: string;
+  private readonly baseUrl: URL;
   private readonly fetchImpl: Fetch;
-  private readonly ports = new Map<string, number>();
 
   constructor(options: DockerFastApiRuntimeOptions) {
-    this.client = options.client;
+    this.baseUrl = new URL(options.baseUrl);
     this.approvedImages = options.approvedImages;
     this.timeoutMs = options.timeoutMs;
     this.healthPollIntervalMs = options.healthPollIntervalMs ?? 250;
-    this.networkName = options.networkName ?? "horizon-runtime";
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
   async prepare(request: RuntimeDeploymentRequest): Promise<RuntimeHandle> {
     const existing = this.findByDeployment(request.deploymentId);
     if (existing) return existing;
-    const image = this.requireImage(request);
-    if (!(await this.client.isAvailable())) throw new DockerUnavailableError();
-
-    await this.client.ensureNetwork(this.networkName);
-    await this.client.pullImage(image);
-    const containerId = await this.client.createContainer({
-      name: `horizon-${request.deploymentId}`,
-      image,
-      memoryMb: Math.max(request.minRamMb, 512),
-      cpuLimit: 2,
-      network: this.networkName,
-      port: 8000,
-    });
-    const handle: RuntimeHandle = { runtimeId: containerId, deploymentId: request.deploymentId, state: "PREPARED" };
+    this.requireImage(request);
+    const handle: RuntimeHandle = { runtimeId: `http:${randomUUID()}`, deploymentId: request.deploymentId, state: "PREPARED" };
     this.handles.set(handle.runtimeId, handle);
     return handle;
   }
@@ -71,26 +48,21 @@ export class DockerFastApiRuntimeAdapter implements RuntimeAdapter {
     const handle = this.findByDeployment(request.deploymentId);
     if (!handle) throw new ModelStartFailedError("Docker container must be prepared before it is started.");
     try {
-      await this.client.startContainer(handle.runtimeId);
-      await this.waitForHealth(handle.runtimeId);
+      await this.waitForHealth();
       handle.state = "RUNNING";
       return handle;
     } catch (error: unknown) {
-      await this.cleanup(handle.runtimeId);
       throw new ModelStartFailedError(error instanceof Error ? error.message : "Docker service failed to start.");
     }
   }
 
   async stop(handle: RuntimeHandle): Promise<void> {
-    await this.cleanup(handle.runtimeId);
     this.handles.delete(handle.runtimeId);
-    this.ports.delete(handle.runtimeId);
   }
 
   async isRunning(handle: RuntimeHandle): Promise<boolean> {
     try {
-      const status = await this.client.inspectContainer(handle.runtimeId);
-      return status.running;
+      return (await this.request("/health")).ok;
     } catch {
       return false;
     }
@@ -99,8 +71,7 @@ export class DockerFastApiRuntimeAdapter implements RuntimeAdapter {
   async infer(request: RuntimeDeploymentRequest, prompt: string): Promise<string> {
     const handle = this.findByDeployment(request.deploymentId);
     if (!handle) throw new ModelStartFailedError("Docker deployment is not available.");
-    const port = await this.getPort(handle.runtimeId);
-    const response = await this.request(port, "/predict", {
+    const response = await this.request("/predict", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: prompt }),
@@ -113,12 +84,11 @@ export class DockerFastApiRuntimeAdapter implements RuntimeAdapter {
     return JSON.stringify({ label: body.label, score: body.score });
   }
 
-  private async waitForHealth(containerId: string): Promise<void> {
+  private async waitForHealth(): Promise<void> {
     const deadline = Date.now() + this.timeoutMs;
     while (Date.now() < deadline) {
       try {
-        const port = await this.getPort(containerId);
-        const response = await this.request(port, "/health");
+        const response = await this.request("/health");
         if (response.ok) return;
       } catch {
         // The service may need a few seconds to load its model.
@@ -128,20 +98,12 @@ export class DockerFastApiRuntimeAdapter implements RuntimeAdapter {
     throw new DockerHealthCheckFailedError();
   }
 
-  private async getPort(containerId: string): Promise<number> {
-    const known = this.ports.get(containerId);
-    if (known) return known;
-    const status = await this.client.inspectContainer(containerId);
-    if (!status.hostPort) throw new ModelStartFailedError("Docker service did not publish its local port.");
-    this.ports.set(containerId, status.hostPort);
-    return status.hostPort;
-  }
-
-  private async request(port: number, path: string, init?: RequestInit): Promise<Response> {
+  private async request(path: string, init?: RequestInit): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      return await this.fetchImpl(`http://127.0.0.1:${port}${path}`, { ...init, signal: controller.signal });
+      const target = new URL(path, `${this.baseUrl.toString().replace(/\/$/, "")}/`).toString();
+      return await this.fetchImpl(target, { ...init, signal: controller.signal });
     } finally {
       clearTimeout(timeout);
     }
@@ -151,15 +113,6 @@ export class DockerFastApiRuntimeAdapter implements RuntimeAdapter {
     const image = request.runtimeModelId?.trim() ?? "";
     if (!imagePattern.test(image) || !this.approvedImages.has(image)) throw new DockerImageNotAllowedError(image || "missing");
     return image;
-  }
-
-  private async cleanup(containerId: string): Promise<void> {
-    try {
-      const status: DockerContainerStatus = await this.client.inspectContainer(containerId);
-      if (status.running) await this.client.stopContainer(containerId);
-    } finally {
-      await this.client.removeContainer(containerId);
-    }
   }
 
   private findByDeployment(deploymentId: string) {

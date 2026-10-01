@@ -24,6 +24,7 @@ export interface DockerContainerStatus {
 export interface DockerClient {
   isAvailable(): Promise<boolean>;
   ensureNetwork(network: string): Promise<void>;
+  imageExists(image: string): Promise<boolean>;
   pullImage(image: string): Promise<void>;
   createContainer(options: DockerContainerOptions): Promise<string>;
   startContainer(containerId: string): Promise<void>;
@@ -88,6 +89,15 @@ export class DockerCliClient implements DockerClient {
 
   async pullImage(image: string): Promise<void> {
     await this.run(["pull", image]);
+  }
+
+  async imageExists(image: string): Promise<boolean> {
+    try {
+      await this.run(["image", "inspect", image]);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async ensureNetwork(network: string): Promise<void> {

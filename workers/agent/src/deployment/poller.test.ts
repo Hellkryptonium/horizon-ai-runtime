@@ -10,6 +10,7 @@ const config: WorkerConfig = {
   ollamaBaseUrl: "http://localhost:11434",
   ollamaRequestTimeoutMs: 30_000,
   dockerRequestTimeoutMs: 30_000,
+  dockerRuntimeHost: "127.0.0.1",
   dockerApprovedImages: "horizon/ml-sentiment:0.1",
   heartbeatIntervalMs: 10_000,
   identityFilePath: "worker.json",

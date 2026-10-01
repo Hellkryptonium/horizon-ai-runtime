@@ -57,6 +57,7 @@ export default function Workers() {
       </form>
       <div style={{ marginTop: 18 }}><div className="detail-label" style={{ color: "#98a2b3", marginBottom: 8 }}>Recent history</div>{terminalHistory.data?.history.length ? terminalHistory.data.history.slice(0, 8).map((entry) => <button key={entry.requestId} type="button" className="terminal-history-row" onClick={() => setTerminalOutput(entry.output.map((item) => item.text))}><span>{entry.command}</span><small>{new Date(entry.createdAt).toLocaleTimeString()}</small></button>) : <small style={{ color: "#98a2b3" }}>No recorded commands yet.</small>}</div>
     </section>}
+    <section className="panel" style={{ padding: 22, marginTop: 18 }}><div className="section-heading" style={{ marginTop: 0 }}><h2>Docker model runtime</h2><Link href="/models" className="text-link">Manage models</Link></div><p style={{ color: "var(--muted)", margin: 0 }}>Docker FastAPI models start automatically on the selected worker when you deploy them. The Worker Agent reuses locally built images such as <strong>horizon/ml-sentiment:0.1</strong> and routes inference through the Control Plane.</p></section>
     <section className="panel" style={{ padding: 22, marginTop: 18 }}>
       <div className="section-heading" style={{ marginTop: 0 }}><h2>Ollama runtime</h2></div>
       {!worker ? <p style={{ color: "var(--muted)" }}>Connect a worker to manage Ollama.</p> : <>

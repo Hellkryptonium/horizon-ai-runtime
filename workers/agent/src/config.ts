@@ -7,6 +7,8 @@ export interface WorkerConfig {
   ollamaBaseUrl: string;
   ollamaRequestTimeoutMs: number;
   dockerRequestTimeoutMs: number;
+  dockerRuntimeHost: string;
+  dockerFastApiUrl?: string;
   dockerApprovedImages: string;
   workerName?: string;
   enrollmentToken?: string;
@@ -76,6 +78,8 @@ export const config: WorkerConfig = {
     process.env.DOCKER_REQUEST_TIMEOUT_MS,
     60_000,
   ),
+  dockerRuntimeHost: process.env.DOCKER_RUNTIME_HOST?.trim() || "127.0.0.1",
+  dockerFastApiUrl: process.env.DOCKER_FASTAPI_URL?.trim() || undefined,
   dockerApprovedImages: process.env.DOCKER_APPROVED_IMAGES?.trim() || "horizon/ml-sentiment:0.1",
   workerName: workerName || undefined,
   enrollmentToken: enrollmentToken || undefined,
