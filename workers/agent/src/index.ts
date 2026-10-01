@@ -8,7 +8,6 @@ import { FakeRuntimeAdapter } from "./runtime/fake.runtime.js";
 import { RuntimeManager } from "./runtime/runtime.manager.js";
 import { OllamaRuntimeAdapter } from "./runtime/ollama.runtime.js";
 import { OllamaProvisioner } from "./runtime/ollama.provisioner.js";
-import { DockerCliClient } from "./runtime/docker.manager.js";
 import { DockerFastApiRuntimeAdapter, parseApprovedDockerImages } from "./runtime/docker-fastapi.runtime.js";
 import { createHeartbeatClient } from "./heartbeat/heartbeat.js";
 import { startWorkerRepl } from "./terminal/repl.js";
@@ -54,7 +53,7 @@ const main = async () => {
       timeoutMs: config.ollamaRequestTimeoutMs,
     })],
     ["docker-fastapi", new DockerFastApiRuntimeAdapter({
-      client: new DockerCliClient({ timeoutMs: config.dockerRequestTimeoutMs }),
+      baseUrl: config.dockerFastApiUrl ?? "http://127.0.0.1:8000",
       approvedImages: parseApprovedDockerImages(config.dockerApprovedImages),
       timeoutMs: config.dockerRequestTimeoutMs,
     })],

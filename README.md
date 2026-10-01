@@ -130,6 +130,17 @@ Compute Credits
 
 The MVP uses a small network of trusted, team-controlled machines, including macOS and Windows systems.
 
+### Docker FastAPI model flow
+
+The included sentiment service is a worker-managed Docker model. Run the Worker Agent natively with npm and start the model container on the same machine:
+
+```bash
+docker build -t horizon/ml-sentiment:0.1 ./docker/ml-sentiment
+docker run --rm -p 127.0.0.1:8000:8000 horizon/ml-sentiment:0.1
+```
+
+Run the Worker Agent with `cd workers/agent && DOCKER_FASTAPI_URL=http://127.0.0.1:8000 npm run dev`, then register `horizon/ml-sentiment:0.1` in the Models page with runtime `Docker FastAPI` and deploy it to the online worker. The Worker Agent checks the existing model container, waits for `/health`, and sends inference requests to `/predict`. Ollama is a separate optional runtime and is not started for Docker deployments.
+
 ### MVP success criteria
 
 The MVP is considered successful when we can:
