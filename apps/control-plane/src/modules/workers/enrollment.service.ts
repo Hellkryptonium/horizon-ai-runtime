@@ -42,6 +42,7 @@ export class WorkerEnrollmentService {
   async enrollWorker(token: string, input: WorkerRegistration, now = new Date()): Promise<EnrolledWorker> {
     const workerId = input.id;
     const existingWorker = workerId ? await this.workers.getWorker(workerId) : undefined;
+    const persistedWorkerId = existingWorker ? workerId : undefined;
 
     if (existingWorker && existingWorker.userId !== null) {
       const enrollment = await this.enrollments.peekEnrollment(hashWorkerEnrollmentToken(token), now);
@@ -63,14 +64,14 @@ export class WorkerEnrollmentService {
 
     const credential = `hzn_worker_${randomBytes(32).toString("base64url")}`;
 
-    if (existingWorker && workerId) {
-      const worker = await this.workers.updateWorkerForEnrollment(workerId, enrollment.userId, hashWorkerCredential(credential), input);
+    if (existingWorker && persistedWorkerId) {
+      const worker = await this.workers.updateWorkerForEnrollment(persistedWorkerId, enrollment.userId, hashWorkerCredential(credential), input);
       return { ...worker, credential };
     }
 
     const worker = await this.workers.createWorker({
       ...input,
-      id: workerId,
+      id: persistedWorkerId,
       userId: enrollment.userId,
       credentialHash: hashWorkerCredential(credential),
       gpu: input.gpu ?? null,
