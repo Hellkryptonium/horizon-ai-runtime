@@ -23,6 +23,7 @@ export interface RuntimeHandle {
 }
 
 export interface RuntimeAdapter {
+  health?(): Promise<boolean>;
   prepare(request: RuntimeDeploymentRequest): Promise<RuntimeHandle>;
   start(request: RuntimeDeploymentRequest): Promise<RuntimeHandle>;
   stop(handle: RuntimeHandle): Promise<void>;

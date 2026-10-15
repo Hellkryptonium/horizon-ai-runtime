@@ -9,6 +9,7 @@ import { RuntimeManager } from "./runtime/runtime.manager.js";
 import { OllamaRuntimeAdapter } from "./runtime/ollama.runtime.js";
 import { OllamaProvisioner } from "./runtime/ollama.provisioner.js";
 import { DockerFastApiRuntimeAdapter, parseApprovedDockerImages } from "./runtime/docker-fastapi.runtime.js";
+import { RuntimeRegistry } from "./runtime/runtime.registry.js";
 import { createHeartbeatClient } from "./heartbeat/heartbeat.js";
 import { startWorkerRepl } from "./terminal/repl.js";
 import { executeWorkerCommand } from "./terminal/commands.js";
@@ -46,22 +47,23 @@ const main = async () => {
     reconnected = false;
   }
 
-  const runtimeManager = new RuntimeManager(new Map<string, import("./runtime/runtime.types.js").RuntimeAdapter>([
-    ["fake", new FakeRuntimeAdapter()],
-    ["ollama", new OllamaRuntimeAdapter({
+  const ollama = new OllamaRuntimeAdapter({
       baseUrl: config.ollamaBaseUrl,
       timeoutMs: config.ollamaRequestTimeoutMs,
-    })],
-    ["docker-fastapi", new DockerFastApiRuntimeAdapter({
+    });
+  const registry = new RuntimeRegistry()
+    .register("fake", new FakeRuntimeAdapter())
+    .register("ollama", ollama, new OllamaProvisioner({
+      baseUrl: config.ollamaBaseUrl,
+      timeoutMs: config.ollamaRequestTimeoutMs,
+      log: console.log,
+    }))
+    .register("docker-fastapi", new DockerFastApiRuntimeAdapter({
       baseUrl: config.dockerFastApiUrl ?? "http://127.0.0.1:8000",
       approvedImages: parseApprovedDockerImages(config.dockerApprovedImages),
       timeoutMs: config.dockerRequestTimeoutMs,
-    })],
-  ]), new Map([["ollama", new OllamaProvisioner({
-    baseUrl: config.ollamaBaseUrl,
-    timeoutMs: config.ollamaRequestTimeoutMs,
-    log: console.log,
-  })]]));
+    }));
+  const runtimeManager = new RuntimeManager(registry);
   const deploymentHandler = new DeploymentHandler(runtimeManager);
   const websocket = createWorkerWebSocketClient(
     config,

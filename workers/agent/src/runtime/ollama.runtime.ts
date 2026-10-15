@@ -46,6 +46,10 @@ export class OllamaRuntimeAdapter implements RuntimeAdapter {
     }
   }
 
+  health(): Promise<boolean> {
+    return this.isAvailable();
+  }
+
   async ensureModel(runtimeModelId: string): Promise<void> {
     if (!(await this.isAvailable())) throw new OllamaUnavailableError(this.baseUrl);
 

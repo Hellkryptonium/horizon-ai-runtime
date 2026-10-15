@@ -6,7 +6,7 @@ import { executeWorkerCommand } from "./commands.js";
 
 export const startWorkerRepl = async (context: WorkerCommandContext) => {
   const terminal = createInterface({ input, output, prompt: "horizon> " });
-  output.write("\nInteractive terminal ready. Type help for available commands.\n");
+  output.write(`\nHorizon worker terminal\nWorker: ${context.workerId}\nRuntimes: ${context.runtime.listRuntimes().join(", ") || "none"}\nType help for commands.\n\n`);
   terminal.prompt();
   await new Promise<void>((resolve) => {
     let processing = false;

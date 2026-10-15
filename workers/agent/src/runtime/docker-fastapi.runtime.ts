@@ -68,6 +68,14 @@ export class DockerFastApiRuntimeAdapter implements RuntimeAdapter {
     }
   }
 
+  async health(): Promise<boolean> {
+    try {
+      return (await this.request("/health")).ok;
+    } catch {
+      return false;
+    }
+  }
+
   async infer(request: RuntimeDeploymentRequest, prompt: string): Promise<string> {
     const handle = this.findByDeployment(request.deploymentId);
     if (!handle) throw new ModelStartFailedError("Docker deployment is not available.");

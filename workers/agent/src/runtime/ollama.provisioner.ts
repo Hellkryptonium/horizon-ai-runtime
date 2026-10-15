@@ -96,6 +96,7 @@ export class OllamaProvisioner implements RuntimeProvisioner {
   }
 
   private async findLocation(): Promise<string | undefined> {
+    if (this.platform !== "win32" && this.platform !== "darwin") return undefined;
     try {
       const command = this.platform === "win32" ? "where.exe" : "which";
       const result = await execFileAsync(command, ["ollama"]);

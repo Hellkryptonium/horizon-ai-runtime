@@ -5,6 +5,7 @@ import {
 } from "./runtime.errors.js";
 import type { RuntimeAdapter, RuntimeDeploymentRequest, RuntimeHandle } from "./runtime.types.js";
 import type { ProvisioningOperation, RuntimeProvisioner } from "./provisioning.types.js";
+import { RuntimeRegistry } from "./runtime.registry.js";
 
 export class RuntimeManager {
   private readonly runtimes = new Map<string, RuntimeHandle>();
@@ -12,12 +13,24 @@ export class RuntimeManager {
   private readonly runtimeRequests = new Map<string, RuntimeDeploymentRequest>();
 
   constructor(
-    private readonly adapters: ReadonlyMap<string, RuntimeAdapter>,
+    private readonly adapters: ReadonlyMap<string, RuntimeAdapter> | RuntimeRegistry,
     private readonly provisioners: ReadonlyMap<string, RuntimeProvisioner> = new Map(),
   ) {}
 
+  listRuntimes(): string[] {
+    return this.adapters instanceof RuntimeRegistry ? this.adapters.names() : [...this.adapters.keys()].sort();
+  }
+
+  async checkRuntime(runtime: string): Promise<boolean> {
+    const adapter = this.getAdapter(runtime);
+    if (adapter.health) return adapter.health();
+    return false;
+  }
+
   async provision(runtime: string, operation: ProvisioningOperation, modelId?: string) {
-    const provisioner = this.provisioners.get(runtime);
+    const provisioner = this.adapters instanceof RuntimeRegistry
+      ? this.adapters.getProvisioner(runtime)
+      : this.provisioners.get(runtime);
     if (!provisioner) throw new UnsupportedRuntimeError(runtime);
     if (operation === "runtime.health") return provisioner.health();
     if (operation === "runtime.install") {
@@ -80,9 +93,11 @@ export class RuntimeManager {
   }
 
   private getAdapter(runtime: string) {
-    const adapter = this.adapters.get(runtime);
-    if (!adapter) throw new UnsupportedRuntimeError(runtime);
-    return adapter;
+    return this.adapters instanceof RuntimeRegistry ? this.adapters.getAdapter(runtime) : (() => {
+      const adapter = this.adapters.get(runtime);
+      if (!adapter) throw new UnsupportedRuntimeError(runtime);
+      return adapter;
+    })();
   }
 
   private validate(request: RuntimeDeploymentRequest) {
