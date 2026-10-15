@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Model } from "../models/models.types.js";
 import type { DeploymentRepository } from "./deployments.repository.js";
-import { DeploymentService, WorkerNotFoundError, WorkerOfflineError } from "./deployments.service.js";
+import { DeploymentNotFoundError, DeploymentService, WorkerNotFoundError, WorkerOfflineError } from "./deployments.service.js";
 import type { Deployment } from "./deployments.types.js";
 
 const userId = "00000000-0000-4000-8000-000000000010";
@@ -22,7 +22,7 @@ const deployment: Deployment = {
 const repository = (): DeploymentRepository => ({
   async createDeployment(input) { return { ...deployment, ...input }; },
   async listDeployments() { return []; },
-  async getDeployment() { return deployment; },
+  async getDeployment(_deploymentId, requestedUserId) { return !requestedUserId || requestedUserId === deployment.userId ? deployment : undefined; },
   async findScheduledByWorkerId() { return []; },
   async updateStatus(_id, status) { return { ...deployment, status }; },
   async updateDeployment() { return undefined; },
@@ -65,12 +65,12 @@ describe("deployment service", () => {
     });
   });
 
-  it("requires an owned running deployment for inference", async () => {
+  it("authorizes inference by deployment owner, including provider-owned workers", async () => {
     const service = new DeploymentService(
-      { getModel: async () => model }, repository(), workerRepository(),
+      { getModel: async () => model }, repository(), workerRepository({ ...worker, userId: "provider-user" }),
       { isWorkerConnected: () => true, sendToWorker: () => true, requestInference: async () => ({ success: true, deploymentId: deployment.id, response: "OK" }) },
     );
-    await expect(service.inferDeployment(deployment.id, "other-user", "Hello")).rejects.toBeInstanceOf(WorkerNotFoundError);
+    await expect(service.inferDeployment(deployment.id, "other-user", "Hello")).rejects.toBeInstanceOf(DeploymentNotFoundError);
     await expect(service.inferDeployment(deployment.id, userId, "Hello")).rejects.toMatchObject({ code: "DEPLOYMENT_NOT_RUNNING" });
   });
 });

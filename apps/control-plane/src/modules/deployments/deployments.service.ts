@@ -92,7 +92,7 @@ export class DeploymentService {
   async inferDeployment(deploymentId: string, userId: string, prompt: string, requestId?: string) {
     const deployment = await this.getDeployment(deploymentId, userId);
     const worker = await this.workers.getWorker(deployment.workerId);
-    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (!worker) throw new WorkerNotFoundError();
     if (deployment.status !== "RUNNING") throw new DeploymentNotRunningError();
     if (!this.connectionManager.isWorkerConnected(worker.id)) throw new WorkerOfflineError();
 
@@ -143,7 +143,7 @@ export class DeploymentService {
     if (!this.connectionManager.requestDeploymentStop) throw new DeploymentStopFailedError("Deployment stop is unavailable.");
 
     const worker = await this.workers.getWorker(deployment.workerId);
-    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (!worker) throw new WorkerNotFoundError();
     if (!this.connectionManager.isWorkerConnected(worker.id)) throw new WorkerOfflineError();
 
     await this.repository.updateStatus(deployment.id, "STOPPING");
@@ -167,7 +167,7 @@ export class DeploymentService {
 
     const model = await this.modelService.getModel(deployment.modelId);
     const worker = await this.workers.getWorker(deployment.workerId);
-    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (!worker) throw new WorkerNotFoundError();
     if (worker.status !== "ONLINE" || !this.connectionManager.isWorkerConnected(worker.id)) throw new WorkerOfflineError();
     if (model.runtime !== "ollama" && model.runtime !== "docker-fastapi"
       || worker.availableRamMb < model.minRamMb

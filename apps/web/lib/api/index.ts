@@ -60,13 +60,14 @@ export const deploymentsApi = {
   update: async (id: string, name: string) => apiRequest<{ success: true; deployment: ApiDeployment }>(`/api/deployments/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
   remove: async (id: string) => apiRequest<void>(`/api/deployments/${id}`, { method: "DELETE" }),
   list: async (): Promise<Deployment[]> => {
-    const [deploymentResponse, modelResponse, workerResponse] = await Promise.all([
+    const [deploymentResponse, modelResponse, workerResponse, marketplaceWorkerResponse] = await Promise.all([
       apiRequest<{ success: true; deployments: ApiDeployment[] }>("/api/deployments"),
       modelsApi.list(),
       ownedWorkersApi.list(),
+      marketplaceApi.workers(),
     ]);
     const models = new Map(modelResponse.map((model) => [model.id, model]));
-    const workers = new Map(workerResponse.map((worker) => [worker.id, worker]));
+    const workers = new Map([...workerResponse, ...marketplaceWorkerResponse].map((worker) => [worker.id, worker]));
     return deploymentResponse.deployments.map((deployment) => ({
       id: deployment.id,
       name: deployment.name || `Deployment ${deployment.id.slice(0, 8)}`,
