@@ -18,7 +18,7 @@ import { modelRepository, type ModelRepository } from "./modules/models/models.r
 import { workerRepository, type WorkerRepository } from "./modules/workers/worker.repository.js";
 import { workerEnrollmentRepository } from "./modules/workers/enrollment.repository.js";
 import type { WorkerEnrollmentRepository } from "./modules/workers/enrollment.repository.js";
-import { WorkerDeploymentService } from "./modules/deployments/deployments.service.js";
+import { DeploymentService, WorkerDeploymentService } from "./modules/deployments/deployments.service.js";
 import type { WorkerConnectionManager } from "./modules/workers/worker.connection-manager.js";
 import { apiKeyRepository } from "./modules/api-keys/api-keys.repository.js";
 import { ApiKeyService } from "./modules/api-keys/api-keys.service.js";
@@ -26,6 +26,7 @@ import { createApiKeyRouter } from "./modules/api-keys/api-keys.routes.js";
 import { InferenceQueue } from "./modules/inference/inference.queue.js";
 import { createInferenceRouter } from "./modules/inference/inference.routes.js";
 import { requestContext } from "./middleware/request-context.js";
+import { createMarketplaceRouter } from "./modules/marketplace/marketplace.routes.js";
 
 export const createApp = (
 	repository: WorkerRepository = workerRepository,
@@ -65,7 +66,9 @@ export const createApp = (
 		requestProvisioning: async () => { throw new Error("Worker is not connected."); },
 	};
 	const inferenceQueue = new InferenceQueue();
+	const deploymentService = new DeploymentService(modelService, deployments, repository, deploymentTransport, inferenceQueue);
 	app.use("/api/deployments", createDeploymentRouter(modelService, deployments, repository, deploymentTransport, auth, inferenceQueue));
+	app.use("/api/marketplace", createMarketplaceRouter(auth, repository, modelService, deploymentService));
 	app.use("/v1", createPublicInferenceRouter(modelService, deployments, repository, deploymentTransport, apiKeys, inferenceQueue));
 	app.use(errorHandler);
 

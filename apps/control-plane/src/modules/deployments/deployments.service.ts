@@ -28,10 +28,10 @@ export class DeploymentService {
     private readonly replicas?: Pick<typeof import("./replica.repository.js").replicaRepository, "create" | "listForDeployment" | "claim" | "release">,
   ) {}
 
-  async createDeployment(input: DeploymentCreation, userId: string): Promise<Deployment> {
+  async createDeployment(input: DeploymentCreation, userId: string, workerOwnerId = userId): Promise<Deployment> {
     const model = await this.modelService.getModel(input.modelId);
     const worker = await this.workers.getWorker(input.workerId);
-    if (!worker || worker.userId !== userId) throw new WorkerNotFoundError();
+    if (!worker || worker.userId !== workerOwnerId) throw new WorkerNotFoundError();
     if (worker.status !== "ONLINE" || !this.connectionManager.isWorkerConnected(worker.id)) {
       throw new WorkerOfflineError();
     }

@@ -1,4 +1,4 @@
-import type { ApiToken, Deployment, Model, OwnedWorker, Status } from "../types";
+import type { ApiToken, ConnectionRequest, Deployment, DeploymentRequest, MarketplaceWorker, Model, OwnedWorker, Status } from "../types";
 import { apiRequest } from "./client";
 
 export const ownedWorkersApi = {
@@ -20,6 +20,16 @@ export const workerProvisioningApi = {
   install: async (workerId: string) => apiRequest<{ success: true; data: { available: boolean; version?: string; location?: string } }>(`/api/workers/${workerId}/runtime/install`, { method: "POST" }),
   models: async (workerId: string) => apiRequest<{ success: true; data: { models: { name: string; sizeMb?: number }[] } }>(`/api/workers/${workerId}/models/status`),
   pull: async (workerId: string, modelId: string) => apiRequest<{ success: true; data: { models: { name: string; sizeMb?: number }[] } }>(`/api/workers/${workerId}/models/pull`, { method: "POST", body: JSON.stringify({ modelId }) }),
+};
+
+export const marketplaceApi = {
+  workers: async (): Promise<MarketplaceWorker[]> => (await apiRequest<{ success: true; workers: MarketplaceWorker[] }>("/api/marketplace/workers")).workers,
+  connections: async (): Promise<ConnectionRequest[]> => (await apiRequest<{ success: true; requests: ConnectionRequest[] }>("/api/marketplace/connections")).requests,
+  requestConnection: async (workerId: string) => apiRequest<{ success: true; request: ConnectionRequest }>("/api/marketplace/connections", { method: "POST", body: JSON.stringify({ workerId }) }),
+  decideConnection: async (requestId: string, decision: "ACCEPTED" | "REJECTED" | "CANCELLED") => apiRequest<{ success: true; request: ConnectionRequest }>(`/api/marketplace/connections/${requestId}/decision`, { method: "POST", body: JSON.stringify({ decision }) }),
+  deploymentRequests: async (): Promise<DeploymentRequest[]> => (await apiRequest<{ success: true; requests: DeploymentRequest[] }>("/api/marketplace/deployment-requests")).requests,
+  requestDeployment: async (input: { workerId: string; modelId: string; connectionRequestId: string; name?: string }) => apiRequest<{ success: true; request: DeploymentRequest }>("/api/marketplace/deployment-requests", { method: "POST", body: JSON.stringify(input) }),
+  decideDeployment: async (requestId: string, decision: "ACCEPTED" | "REJECTED" | "CANCELLED") => apiRequest<{ success: true; request: DeploymentRequest }>(`/api/marketplace/deployment-requests/${requestId}/decision`, { method: "POST", body: JSON.stringify({ decision }) }),
 };
 
 type ApiModel = { id: string; name: string; version: string; runtime: string; format: string; sizeMb: number; minRamMb: number; requiresGpu: boolean };

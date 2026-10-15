@@ -2,7 +2,7 @@ export type WorkerStatus = "ONLINE" | "OFFLINE" | "BUSY";
 export type DeploymentStatus = "PENDING" | "SCHEDULED" | "DEPLOYING" | "RUNNING" | "STOPPING" | "STOPPED" | "FAILED";
 export type User = { id: string; name: string; email: string };
 export type ApiToken = { id: string; name: string; prefix: string; scopes: string[]; expiresAt: string | null; lastUsedAt: string | null; createdAt: string };
-export type Status = "online" | "running" | "deploying" | "stopping" | "stopped" | "offline" | "pending" | "failed";
+export type Status = "online" | "running" | "deploying" | "stopping" | "stopped" | "offline" | "pending" | "failed" | "accepted" | "rejected" | "expired" | "cancelled";
 export type Model = { id: string; name: string; version: string; runtime: string; format: string; size: string; ram: string; gpu: string; metadata: { name: string; version: string; format: string; runtime: string; runtimeModelId: string | null; sizeMb: number; minRamMb: number; minVramMb: number | null; requiresGpu: boolean; modelArchitecture: string; contextLength: number | null; downloadUrl: string | null } };
 export type Deployment = { id: string; name: string; model: string; modelId: string; status: Status; worker: string; workerId: string; created: string; endpoint: string; runtime: string };
 export type OwnedWorker = {
@@ -19,3 +19,6 @@ export type OwnedWorker = {
 	operatingSystem: string;
 	lastHeartbeat: string | null;
 };
+export type MarketplaceWorker = OwnedWorker & { providerName: string };
+export type ConnectionRequest = { id: string; requesterId: string; providerId: string; workerId: string; status: "REQUESTED" | "ACCEPTED" | "REJECTED" | "EXPIRED" | "CANCELLED"; expiresAt: string; respondedAt: string | null; createdAt: string; updatedAt: string };
+export type DeploymentRequest = { id: string; requesterId: string; providerId: string; workerId: string; modelId: string; connectionRequestId: string; deploymentId: string | null; name: string | null; status: "REQUESTED" | "ACCEPTED" | "REJECTED" | "EXPIRED" | "CANCELLED" | "DEPLOYING" | "RUNNING" | "FAILED" | "STOPPED"; expiresAt: string; respondedAt: string | null; createdAt: string; updatedAt: string };

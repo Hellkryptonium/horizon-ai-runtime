@@ -2,7 +2,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "./api/auth";
 import { ApiError } from "./api/client";
 import { configApi } from "./api/config";
-import { apiKeysApi, deploymentsApi, inferenceApi, modelsApi, ownedWorkersApi, workerProvisioningApi } from "./api";
+import { apiKeysApi, deploymentsApi, inferenceApi, marketplaceApi, modelsApi, ownedWorkersApi, workerProvisioningApi } from "./api";
+
+export const useMarketplaceWorkersQuery = () => useQuery({ queryKey: ["marketplace-workers"], queryFn: marketplaceApi.workers });
+export const useConnectionRequestsQuery = () => useQuery({ queryKey: ["connection-requests"], queryFn: marketplaceApi.connections });
+export const useRequestConnectionMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation({ mutationFn: marketplaceApi.requestConnection, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["connection-requests"] }); } });
+};
+export const useDecideConnectionMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation({ mutationFn: ({ requestId, decision }: { requestId: string; decision: "ACCEPTED" | "REJECTED" | "CANCELLED" }) => marketplaceApi.decideConnection(requestId, decision), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["connection-requests"] }); void queryClient.invalidateQueries({ queryKey: ["marketplace-workers"] }); } });
+};
+export const useDeploymentRequestsQuery = () => useQuery({ queryKey: ["deployment-requests"], queryFn: marketplaceApi.deploymentRequests });
+export const useRequestDeploymentMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation({ mutationFn: marketplaceApi.requestDeployment, onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["deployment-requests"] }); } });
+};
+export const useDecideDeploymentRequestMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation({ mutationFn: ({ requestId, decision }: { requestId: string; decision: "ACCEPTED" | "REJECTED" | "CANCELLED" }) => marketplaceApi.decideDeployment(requestId, decision), onSuccess: () => { void queryClient.invalidateQueries({ queryKey: ["deployment-requests"] }); void queryClient.invalidateQueries({ queryKey: ["deployments"] }); } });
+};
 
 export const useOwnedWorkersQuery = () => useQuery({ queryKey: ["owned-workers"], queryFn: ownedWorkersApi.list });
 export const useCreateWorkerEnrollmentMutation = () => useMutation({ mutationFn: ownedWorkersApi.createEnrollment });

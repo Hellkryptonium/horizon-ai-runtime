@@ -63,6 +63,24 @@ export const workerEnrollments = pgTable("worker_enrollments", {
 	workerEnrollmentsUserIdIndex: index("worker_enrollments_user_id_idx").on(table.userId),
 }));
 
+export const connectionRequestStatus = pgEnum("connection_request_status", ["REQUESTED", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED"]);
+
+export const connectionRequests = pgTable("connection_requests", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	requesterId: uuid("requester_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	providerId: uuid("provider_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
+	status: connectionRequestStatus("status").default("REQUESTED").notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	respondedAt: timestamp("responded_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+	connectionRequesterIndex: index("connection_requests_requester_idx").on(table.requesterId),
+	connectionProviderIndex: index("connection_requests_provider_idx").on(table.providerId),
+	connectionWorkerIndex: index("connection_requests_worker_idx").on(table.workerId),
+}));
+
 export const models = pgTable("models", {
 	id: uuid("id").defaultRandom().primaryKey(),
 	name: varchar("name", { length: 255 }).notNull(),
@@ -105,6 +123,28 @@ export const deployments = pgTable("deployments", {
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const deploymentRequestStatus = pgEnum("deployment_request_status", ["REQUESTED", "ACCEPTED", "REJECTED", "EXPIRED", "CANCELLED", "DEPLOYING", "RUNNING", "FAILED", "STOPPED"]);
+
+export const deploymentRequests = pgTable("deployment_requests", {
+	id: uuid("id").defaultRandom().primaryKey(),
+	requesterId: uuid("requester_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	providerId: uuid("provider_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+	workerId: uuid("worker_id").notNull().references(() => workers.id, { onDelete: "cascade" }),
+	modelId: uuid("model_id").notNull().references(() => models.id),
+	connectionRequestId: uuid("connection_request_id").notNull().references(() => connectionRequests.id),
+	deploymentId: uuid("deployment_id").references(() => deployments.id, { onDelete: "set null" }),
+	name: varchar("name", { length: 255 }),
+	status: deploymentRequestStatus("status").default("REQUESTED").notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+	respondedAt: timestamp("responded_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+	deploymentRequesterIndex: index("deployment_requests_requester_idx").on(table.requesterId),
+	deploymentProviderIndex: index("deployment_requests_provider_idx").on(table.providerId),
+	deploymentStatusIndex: index("deployment_requests_status_idx").on(table.status),
+}));
 
 export const inferenceRequestStatus = pgEnum("inference_request_status", ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "TIMED_OUT"]);
 

@@ -92,6 +92,13 @@
       "when": 1790798963544,
       "tag": "0012_smart_magus",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792045730541,
+      "tag": "0013_tricky_scorpion",
+      "breakpoints": true
     }
   ]
 }

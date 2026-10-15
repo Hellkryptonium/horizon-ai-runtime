@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { db } from "../../db/index.js";
-import { deployments } from "../../db/schema.js";
+import { deploymentRequests, deployments } from "../../db/schema.js";
 import type { Deployment, NewDeployment } from "./deployments.types.js";
 
 export interface DeploymentRepository {
@@ -55,6 +55,10 @@ export const deploymentRepository: DeploymentRepository = {
       .set({ status, updatedAt: new Date() })
       .where(eq(deployments.id, deploymentId))
       .returning();
+    if (updated && ["PENDING", "DEPLOYING", "RUNNING", "FAILED", "STOPPED"].includes(status)) {
+      const requestStatus = status === "PENDING" || status === "SCHEDULED" ? "ACCEPTED" : status === "STOPPING" ? "DEPLOYING" : status;
+      await db.update(deploymentRequests).set({ status: requestStatus, updatedAt: new Date() }).where(eq(deploymentRequests.deploymentId, deploymentId));
+    }
     return updated;
   },
 
